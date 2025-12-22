@@ -187,13 +187,24 @@ JL.webgl.ui.item.ttr.css = `
 JL.webgl.ui.item.ttr.ui_framework = function(){
 	var ui_info = this.ui_info.ttr;
 
+	var is_mobile = ( $( window ).width() < 900 );
+
+	var on_tap     = ( is_mobile ? [ 'ontouchstart', ] : [ 'onmousedown', ] );
+	var on_release = ( is_mobile ? [ 'ontouchend', 'ontouchcancel', ] : [ 'onmouseup', ] );
+
 	return `<div id="ttr" class="ui-ttr">
 
-		<div class="tap-circle left " onmousedown="JL.webgl.active_camera.target.tap( 0 );" onmouseup="JL.webgl.active_camera.target.release( 0 );"></div>
-		<div class="tap-circle      " onmousedown="JL.webgl.active_camera.target.tap( 1 );" onmouseup="JL.webgl.active_camera.target.release( 1 );"></div>
-		<div class="tap-circle right" onmousedown="JL.webgl.active_camera.target.tap( 2 );" onmouseup="JL.webgl.active_camera.target.release( 2 );"></div>
+		<div class="tap-circle left " ` + on_tap.map( k => k + '="JL.webgl.active_camera.target.tap( 0 );"' ).join(' ') + ` ` + on_release.map( k => k + '="JL.webgl.active_camera.target.release( 0 );"' ).join(' ') + `></div>
+		<div class="tap-circle      " ` + on_tap.map( k => k + '="JL.webgl.active_camera.target.tap( 1 );"' ).join(' ') + ` ` + on_release.map( k => k + '="JL.webgl.active_camera.target.release( 1 );"' ).join(' ') + `></div>
+		<div class="tap-circle right" ` + on_tap.map( k => k + '="JL.webgl.active_camera.target.tap( 2 );"' ).join(' ') + ` ` + on_release.map( k => k + '="JL.webgl.active_camera.target.release( 2 );"' ).join(' ') + `></div>` + 
 
-		<div class="top-bar">
+
+		// `<div class="tap-circle left " onmousedown="JL.webgl.active_camera.target.tap( 0 );" onmouseup="JL.webgl.active_camera.target.release( 0 );"></div>
+		// <div class="tap-circle      " onmousedown="JL.webgl.active_camera.target.tap( 1 );" onmouseup="JL.webgl.active_camera.target.release( 1 );"></div>
+		// <div class="tap-circle right" onmousedown="JL.webgl.active_camera.target.tap( 2 );" onmouseup="JL.webgl.active_camera.target.release( 2 );"></div>` + 
+
+
+		`<div class="top-bar">
 			<div class="score">0</div>
 
 			<div class="small-score" id="score-streak">
