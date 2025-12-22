@@ -1,0 +1,14 @@
+-- TODO --
+
+-Make hold notes look better
+
+-Prevent mouse from rotating camera
+
+-Populate notes for entire track
+
+
+-- Optional --
+
+-Implement pause button.
+
+-Add in a countdown before the audio starts.
