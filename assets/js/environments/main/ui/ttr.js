@@ -25,23 +25,23 @@ JL.webgl.ui.item.ttr.css = `
 
 	.ui-ttr .tap-circle{
 		position:fixed;
-		left:calc( 50vw - 6.2vh );
-		bottom:4.5vh;
-		width :12vh;
-		height:12vh;
+		left:calc( 50vw - 8vh );
+		bottom:2.5vh;
+		width :16vh;
+		height:16vh;
 		background:rgba(0,55,0,0.25);
-		border-radius:100%;
 		border:1px solid rgba(255,255,255,0.45);
+		opacity:0;
 	}
 
 	.ui-ttr .tap-circle.left{
 		background:rgba(55,0,0,0.25);
-		left:calc( 50vw - 22vh );
+		left:calc( 50vw - 24vh );
 	}
 
 	.ui-ttr .tap-circle.right{
 		background:rgba(0,0,55,0.25);
-		left:calc( 50vw + 9.6vh );
+		left:calc( 50vw + 8vh );
 	}
 
 	.ui-ttr .top-bar{
