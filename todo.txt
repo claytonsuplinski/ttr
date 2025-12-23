@@ -1,11 +1,8 @@
 -- TODO --
 
--Make hold notes look better
-
--Prevent mouse from rotating camera
-
 -Populate notes for entire track
-
+	-Maybe implement a 'record' feature for doing this?
+		-It won't be perfect, but might get things close enough.
 
 -- Optional --
 

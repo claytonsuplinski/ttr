@@ -63,6 +63,12 @@ JL.webgl.space_object.ttr.prototype._constructor = function( p ){
 
 	try{ Object.assign( this, JL.webgl.variables.ttr ); } catch(e){}
 
+	this.key_bindings = [ 'ttr' ];
+
+	// TODO : Turn this into a built-in option with s_o.regular
+	if( !JL.webgl.variables.is_editing ) JL.webgl.ui.mouse.disable();
+	else                                 JL.webgl.ui.mouse.enable();
+
 	this.camera_offset = { lat : 30, lon : 0, rad : 3, offset : [ 0, 0, 1.25 ], };
 
 	this.note_time_threshold = 0.25;
@@ -166,7 +172,7 @@ JL.webgl.space_object.ttr.prototype._constructor = function( p ){
 		params : {
 			// named_textures  : { main : this.parts_texture, },
 			named_textures  : { main : './assets/textures/seamless/sci_fi_patterns/waves_01.jpg', },
-			properties      : { effects : [ '_plain', '_instanced_pos', '_instanced_scl', ], },
+			properties      : { effects : [ '_plain', '_instanced_pos', '_instanced_scl', '_instanced_texture_scale', '_instanced_texture_loop_linear', '_instanced_hue_rotate_loop_linear', ], },
 			// properties      : { effects : [ '_plain', '_texture_repeat_3d', '_instanced_pos', '_instanced_scl', ], },
 			// properties      : { effects : [ '_plain', '_pattern_squares_03', '_instanced_pos', '_instanced_scl', ], },
 			// properties      : { effects : [ '_plain', '_texture_size', '_instanced_pos', '_instanced_scl', '_instanced_texture_offset', ], },
@@ -179,7 +185,7 @@ JL.webgl.space_object.ttr.prototype._constructor = function( p ){
 				// 	texture_repeat_3d_scl : 1,
 				// },
 			},
-			dynamic_buffers : [ 'scl' ],
+			dynamic_buffers : [ 'scl', 'texture_loop_linear_velocity', 'hue_rotate_loop_linear_speed', ],
 			instanced_vals  : {
 				pos : {
 					x : hold_instances.map( n => n.x ),
@@ -191,10 +197,20 @@ JL.webgl.space_object.ttr.prototype._constructor = function( p ){
 					y : hold_instances.map( n => 1 ),
 					z : hold_instances.map( n => n.dur ),
 				},
-				// texture_offset : {
-				// 	x : hold_instances.map( n => 0.75 ),
-				// 	y : hold_instances.map( n => 0.25 ),
-				// },
+				texture_scale : {
+					x : hold_instances.map( n => 0.1 ),
+					y : hold_instances.map( n => ( n.z + ( n.dur / 2 ) ) ),
+				},
+				texture_loop_linear_velocity : {
+					x : hold_instances.map( n => 0    ),
+					y : hold_instances.map( n => 0.02 ),
+				},
+				hue_rotate : {
+					deg : hold_instances.map( n => 0 ),
+				},
+				hue_rotate_loop_linear_speed : {
+					spd : hold_instances.map( n => 0.5 ),
+				},
 			},
 		},
 	});
@@ -307,6 +323,14 @@ JL.webgl.space_object.ttr.prototype.do_success_note_visual = function( note_inde
 	this.add_per_frame_function( fn, identifying_criteria );
 };
 
+JL.webgl.space_object.ttr.prototype.do_success_hold_visual = function( hold_index ){
+	var i_2 = hold_index * 2;
+
+	this.holds_g_o.hue_rotate_loop_linear_speed[ hold_index ] = 1;
+
+	this.holds_g_o.texture_loop_linear_velocity[ i_2 + 1 ] = -1;
+};
+
 JL.webgl.space_object.ttr.prototype.do_failed_note_visual = function( note_index ){
 	var i_3 = note_index * 3;
 
@@ -364,7 +388,10 @@ JL.webgl.space_object.ttr.prototype.increment_score = function( p ){
 				JL.webgl.ui.item.ttr.set_multiplier( this.score_multiplier );
 			}
 
-			if( p.note ) this.do_success_note_visual( p.note.index );
+			if( p.note ){
+				this.do_success_note_visual( p.note.index );
+				if( p.note.hold_index !== undefined ) this.do_success_hold_visual( p.note.hold_index );
+			}
 		}
 	}
 
@@ -417,7 +444,7 @@ JL.webgl.space_object.ttr.prototype.release = function( lane ){
 JL.webgl.space_object.ttr.prototype.start_game = function( p ){
 	var self = this;
 
-	console.log( 'dur: ', this.audio.duration );
+	// console.log( 'dur: ', this.audio.duration );
 
 	this.audio.play();
 

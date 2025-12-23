@@ -9,8 +9,10 @@ JL.webgl.init({
 	hashlinks   : {},
 	keyboard    : {
 		bindings : {
-			power_gauge : [
-				{ name : "ENTER", controllers : { ps4 : 'X' }, down : function(){ JL.webgl.ui.item.power_gauge.on_user_input(); } },
+			ttr : [
+				{ name :  "LEFT ARROW", controllers : { ps4 : 'Square' }, down : function(){ JL.webgl.active_camera.target.tap(0); }, up : function(){ JL.webgl.active_camera.target.release(0); } },
+				{ name :  "DOWN ARROW", controllers : { ps4 : 'X'      }, down : function(){ JL.webgl.active_camera.target.tap(1); }, up : function(){ JL.webgl.active_camera.target.release(1); } },
+				{ name : "RIGHT ARROW", controllers : { ps4 : 'O'      }, down : function(){ JL.webgl.active_camera.target.tap(2); }, up : function(){ JL.webgl.active_camera.target.release(2); } },
 			],
 		},
 	},
