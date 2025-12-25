@@ -6,7 +6,11 @@ JL.webgl.init({
 		},
 	},
 	controllers : {},
-	hashlinks   : {},
+	hashlinks   : {
+		params : {
+			record : {},
+		},
+	},
 	keyboard    : {
 		bindings : {
 			ttr : [

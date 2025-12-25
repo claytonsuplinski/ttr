@@ -4814,18 +4814,14 @@ JL.json_edit.prototype.arr_edit_selected_entries = function( key, edit_value_fn 
 	}
 };
 
-JL.json_edit.prototype.arr_increment_selected_entries = function( key, val, p ){
-	var p = p || {};
-
-	this.arr_edit_selected_entries( key, function( _p ){ return Number( ( _p.value + val ).toFixed( 12 ) ); });
+JL.json_edit.prototype.arr_increment_selected_entries = function( p ){
+	this.arr_edit_selected_entries( p.key, function( _p ){ return Number( ( _p.value + p.val ).toFixed( 12 ) ); });
 
 	if( !p.no_draw ) this.draw();
 };
 
-JL.json_edit.prototype.arr_multiply_selected_entries = function( key, val, p ){
-	var p = p || {};
-
-	this.arr_edit_selected_entries( key, function( _p ){ return Number( ( _p.value * val ).toFixed( 12 ) ); });
+JL.json_edit.prototype.arr_multiply_selected_entries = function( p ){
+	this.arr_edit_selected_entries( p.key, function( _p ){ return Number( ( _p.value * p.val ).toFixed( 12 ) ); });
 
 	if( !p.no_draw ) this.draw();
 };
@@ -4836,14 +4832,18 @@ JL.json_edit.prototype.arr_edit_value = function( p, change_fn ){
 	var arr_path = ele_path.slice();
 	var ele_idx  = parseInt( arr_path.pop() );
 
-	var arr = JL.functions.get_nested_object( this.value, arr_path );
+	// 2025-12-19 -- trying to add support for 'on_change' when modifying an array.
+	var arr = JL.functions.get_nested_object( this.value, arr_path ).slice();
+	// var arr = JL.functions.get_nested_object( this.value, arr_path );
 
 	change_fn( arr, ele_idx );
 
 	var arr_structure = p.arr_structure || this.get_structure( p.path.slice( 0, p.path.length - 1 ) );
 	if( arr_structure._entry_collapse_statuses ) change_fn( arr_structure._entry_collapse_statuses, ele_idx );
 	
-	JL.functions.set_nested_object( this.value, arr_path, arr );
+	// 2025-12-19 -- trying to add support for 'on_change' when modifying an array.
+	this.set_value({ value : arr, path : arr_path, structure : arr_structure });
+	// JL.functions.set_nested_object( this.value, arr_path, arr );
 
 	if( !p.no_draw ) this.draw();
 };
@@ -4858,10 +4858,8 @@ JL.json_edit.prototype.arr_is_entry_selected = function( entry ){
 
 JL.json_edit.prototype.arr_move_entry = function( p ){
 	this.arr_edit_value( p, function( arr, ele_idx ){
-		if( p.offset + ele_idx >= 0 ){
-			var val = arr.splice( ele_idx, 1 )[ 0 ];
-			arr.splice( ele_idx + p.offset, 0, val );
-		}
+		var val = arr.splice( ele_idx, 1 )[ 0 ];
+		arr.splice( Math.max( p.offset + ele_idx, 0 ), 0, val );
 	});
 };
 
@@ -5232,6 +5230,8 @@ JL.json_edit.prototype.get_html = function( _params ){
 	var tr_end   = '</tr>';
 
 	var has_lbl = true;
+
+	var no_change_event = false;
 
 	var right_click_options = {
 		contents : [],
@@ -5883,6 +5883,8 @@ JL.json_edit.prototype.get_html = function( _params ){
 					JL.functions.set_nested_object( this.value, path, value );
 				}
 
+				no_change_event = true;
+
 				this.datetime_pickers.push({
 					parent    : { id : '#' + id, },
 					value     : value_dt,
@@ -6118,18 +6120,20 @@ JL.json_edit.prototype.get_html = function( _params ){
 				break;
 		}
 
-		this.add_event( 'change', id, path, function( event ){
-			var p = { event };
-			p.prev_value = value;
-			p.value      = get_on_change_value( p );
+		if( !no_change_event ){
+			this.add_event( 'change', id, path, function( event ){
+				var p = { event };
+				p.prev_value = value;
+				p.value      = get_on_change_value( p );
 
-			if( structure.convert_to_cpu ) p.value = structure.convert_to_cpu( p.value, { structure, path } );
-			// if( structure.pre_change ){
-			// 	structure.pre_change( p );
-			// }
-			on_change( p );
-			// if( structure.post_change ) structure.post_change( p );
-		});
+				if( structure.convert_to_cpu ) p.value = structure.convert_to_cpu( p.value, { structure, path } );
+				// if( structure.pre_change ){
+				// 	structure.pre_change( p );
+				// }
+				on_change( p );
+				// if( structure.post_change ) structure.post_change( p );
+			});
+		}
 
 		if( structure.webgl_camera ){
 			this.add_event( 'focus', id, path, function(){
@@ -6169,7 +6173,7 @@ JL.json_edit.prototype.get_html = function( _params ){
 					var key = p.key;
 					if( key === undefined ) key = path[ path.length - 1 ];
 
-					self.arr_multiply_selected_entries( key, val, { no_draw : true } );
+					self.arr_multiply_selected_entries({ key, val, no_draw : true });
 
 					if( !self.arr_is_entry_selected( p.path.slice( 0, -1 ).join('/') ) ) p.set_value( p.value * val );
 					else                                                                 self.draw({ preserve_selected : true });
@@ -6180,7 +6184,7 @@ JL.json_edit.prototype.get_html = function( _params ){
 					var key = p.key;
 					if( key === undefined ) key = path[ path.length - 1 ];
 
-					self.arr_increment_selected_entries( key, val, { no_draw : true } );
+					self.arr_increment_selected_entries({ key, val, no_draw : true });
 
 					if( !self.arr_is_entry_selected( p.path.slice( 0, -1 ).join('/') ) ) p.set_value( p.value + val );
 					else                                                                 self.draw({ preserve_selected : true });
@@ -12062,53 +12066,56 @@ JL.webgl.shaders = {
 
 JL.webgl.shaders.config = {
 	attr : {
-		v              : { type :   'vec', item_size : 3, labels : [ 'x'    , 'y'  , 'z'    ].map(function( label ){ return { label, type : 'float' }; }) },
-		vn             : { type :   'vec', item_size : 3, labels : [ 'x'    , 'y'  , 'z'    ].map(function( label ){ return { label, type : 'float' }; }) },
-		vt             : { type :   'vec', item_size : 2, labels : [ 'x'    , 'y'           ].map(function( label ){ return { label, type : 'float' }; }) },
-		view_v         : { type :   'vec', item_size : 3, labels : [ 'x'    , 'y'  , 'z'    ].map(function( label ){ return { label, type : 'float' }; }) },
-		local_v        : { type :   'vec', item_size : 3, labels : [ 'x'    , 'y'  , 'z'    ].map(function( label ){ return { label, type : 'float' }; }) },
-		local_vn       : { type :   'vec', item_size : 3, labels : [ 'x'    , 'y'  , 'z'    ].map(function( label ){ return { label, type : 'float' }; }) },
-		pos            : { type :   'vec', item_size : 3, labels : [ 'x'    , 'y'  , 'z'    ].map(function( label ){ return { label, type : 'float', default_range : [ -10, 10 ] }; }) },
-		pos_s          : { type :   'vec', item_size : 3, labels : [ 'x'    , 'y'  , 'z'    ].map(function( label ){ return { label, type : 'float', default_range : [ -10, 10 ] }; }) },
-		pos_e          : { type :   'vec', item_size : 3, labels : [ 'x'    , 'y'  , 'z'    ].map(function( label ){ return { label, type : 'float', default_range : [ -10, 10 ] }; }) },
-		rot            : { type :   'vec', item_size : 3, labels : [ 'pitch', 'yaw', 'roll' ].map(function( label ){ return { label, type : 'float', default_range : [ 0, 360 ], multiplier : JL.functions.constants.to_radians }; }) },
-		spin           : { type :   'vec', item_size : 3, labels : [ 'pitch', 'yaw', 'roll' ].map(function( label ){ return { label, type : 'float' }; }) },
-		scl            : { type :   'vec', item_size : 3, labels : [ 'x'    , 'y'  , 'z'    ].map(function( label ){ return { label, type : 'float', default_range : [ 0,  10 ], default : 1 }; }) },
-		color          : { type :   'vec', item_size : 3, labels : [ 'r'    , 'g'  , 'b'    ].map(function( label ){ return { label, type : 'float', min : 0, max : 1 }; }) },
-		color_add      : { type :   'vec', item_size : 3, labels : [ 'r'    , 'g'  , 'b'    ].map(function( label ){ return { label, type : 'float', min : 0, max : 1 }; }) },
-		diverge_center : { type :   'vec', item_size : 3, labels : [ 'x'    , 'y'  , 'z'    ].map(function( label ){ return { label, type : 'float', default_range : [ -10,  10 ] }; }) },
-		rand_morph_rad : { type :   'vec', item_size : 2, labels : [ 'min'  , 'max',        ].map(function( label ){ return { label, type : 'float', default_range : [ 0, 2 ], default : 1 }; }) },
-		texture_offset : { type :   'vec', item_size : 2, labels : [ 'x'    , 'y'           ].map(function( label ){ return { label, type : 'float' }; }) },
-		wall_slant     : { type :   'vec', item_size : 2, labels : [ 'l'    , 'r'           ].map(function( label ){ return { label, type : 'float' }; }) },
-		lat_lon        : { type :   'vec', item_size : 2, labels : [ 'lat'  , 'lon'         ].map(function( label ){ return { label, type : 'float', min : -180, max : 180 }; }) },
-		alpha          : { type : 'float', item_size : 1, labels : [ 'a'                    ].map(function( label ){ return { label, type : 'float', min : 0, max : 1 }; }) },
-		alpha_add      : { type : 'float', item_size : 1, labels : [ 'a'                    ].map(function( label ){ return { label, type : 'float', }; }) },
-		alpha_mult     : { type : 'float', item_size : 1, labels : [ 'a'                    ].map(function( label ){ return { label, type : 'float', }; }) },
-		bearing        : { type : 'float', item_size : 1, labels : [ 'deg'                  ].map(function( label ){ return { label, type : 'float', min : 0, max : 360, multiplier : JL.functions.constants.to_radians }; }) },
-		clip_x         : { type : 'float', item_size : 1, labels : [ 'max'                  ].map(function( label ){ return { label, type : 'float' }; }) },
-		clip_y         : { type : 'float', item_size : 1, labels : [ 'max'                  ].map(function( label ){ return { label, type : 'float' }; }) },
-		clip_z         : { type : 'float', item_size : 1, labels : [ 'max'                  ].map(function( label ){ return { label, type : 'float' }; }) },
-		curl_y_freq    : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'float', default_range : [  0, 50 ], default : 10  }; }) },
-		curl_y_rad     : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'float', default_range : [ -1,  1 ], default : 0.1 }; }) },
-		diverge_exp    : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'float', default_range : [  0, 10 ], default : 1   }; }) },
-		diverge_spd    : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'float', default_range : [ -5,  5 ], default : 1   }; }) },
-		diverge_rad    : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'float', default_range : [  1,  5 ], default : 1   }; }) },
-		group          : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'float' }; }) },
-		hue_rotate     : { type : 'float', item_size : 1, labels : [ 'deg'                  ].map(function( label ){ return { label, type : 'float', min : 0, max : 360, multiplier : JL.functions.constants.to_radians }; }) },
-		impostor_rot   : { type : 'float', item_size : 1, labels : [ 'rot'                  ].map(function( label ){ return { label, type : 'float', min : 0, max : 360, multiplier : JL.functions.constants.to_radians }; }) },
-		impostor_spin  : { type : 'float', item_size : 1, labels : [ 'spin'                 ].map(function( label ){ return { label, type : 'float' }; }) },
-		rand_morph_mag : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'float', default_range : [  0,  1 ], default : 1   }; }) },
-		size           : { type : 'float', item_size : 1, labels : [ 'size'                 ].map(function( label ){ return { label, type : 'float', default_range : [  0, 10 ], default : 1   }; }) },
-		swirl_y_freq   : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'float', default_range : [  0, 50 ], default : 10  }; }) },
-		swirl_y_rad    : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'float', default_range : [ -1,  1 ], default : 0.1 }; }) },
-		swirl_y_speed  : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'float', default_range : [  0,  5 ], default : 0.5 }; }) },
-		texture_size   : { type : 'float', item_size : 1, labels : [ 'size'                 ].map(function( label ){ return { label, type : 'float', default_range : [  0,  2 ], default : 1   }; }) },
-		time_offset    : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'float' }; }) },
-		yaw            : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'float', min : 0, max : 360, multiplier : JL.functions.constants.to_radians }; }) },
-		char_offset    : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'int' }; }) },
-		str_len        : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'int' }; }) },
-		window_lit     : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'int' }; }) },
-		discard        : { type :   'int', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'int' }; }) },
+		v                            : { type :   'vec', item_size : 3, labels : [ 'x'    , 'y'  , 'z'    ].map(function( label ){ return { label, type : 'float' }; }) },
+		vn                           : { type :   'vec', item_size : 3, labels : [ 'x'    , 'y'  , 'z'    ].map(function( label ){ return { label, type : 'float' }; }) },
+		vt                           : { type :   'vec', item_size : 2, labels : [ 'x'    , 'y'           ].map(function( label ){ return { label, type : 'float' }; }) },
+		view_v                       : { type :   'vec', item_size : 3, labels : [ 'x'    , 'y'  , 'z'    ].map(function( label ){ return { label, type : 'float' }; }) },
+		local_v                      : { type :   'vec', item_size : 3, labels : [ 'x'    , 'y'  , 'z'    ].map(function( label ){ return { label, type : 'float' }; }) },
+		local_vn                     : { type :   'vec', item_size : 3, labels : [ 'x'    , 'y'  , 'z'    ].map(function( label ){ return { label, type : 'float' }; }) },
+		pos                          : { type :   'vec', item_size : 3, labels : [ 'x'    , 'y'  , 'z'    ].map(function( label ){ return { label, type : 'float', default_range : [ -10, 10 ] }; }) },
+		pos_s                        : { type :   'vec', item_size : 3, labels : [ 'x'    , 'y'  , 'z'    ].map(function( label ){ return { label, type : 'float', default_range : [ -10, 10 ] }; }) },
+		pos_e                        : { type :   'vec', item_size : 3, labels : [ 'x'    , 'y'  , 'z'    ].map(function( label ){ return { label, type : 'float', default_range : [ -10, 10 ] }; }) },
+		rot                          : { type :   'vec', item_size : 3, labels : [ 'pitch', 'yaw', 'roll' ].map(function( label ){ return { label, type : 'float', default_range : [ 0, 360 ], multiplier : JL.functions.constants.to_radians }; }) },
+		spin                         : { type :   'vec', item_size : 3, labels : [ 'pitch', 'yaw', 'roll' ].map(function( label ){ return { label, type : 'float' }; }) },
+		scl                          : { type :   'vec', item_size : 3, labels : [ 'x'    , 'y'  , 'z'    ].map(function( label ){ return { label, type : 'float', default_range : [ 0,  10 ], default : 1 }; }) },
+		color                        : { type :   'vec', item_size : 3, labels : [ 'r'    , 'g'  , 'b'    ].map(function( label ){ return { label, type : 'float', min : 0, max : 1 }; }) },
+		color_add                    : { type :   'vec', item_size : 3, labels : [ 'r'    , 'g'  , 'b'    ].map(function( label ){ return { label, type : 'float', min : 0, max : 1 }; }) },
+		diverge_center               : { type :   'vec', item_size : 3, labels : [ 'x'    , 'y'  , 'z'    ].map(function( label ){ return { label, type : 'float', default_range : [ -10,  10 ] }; }) },
+		rand_morph_rad               : { type :   'vec', item_size : 2, labels : [ 'min'  , 'max',        ].map(function( label ){ return { label, type : 'float', default_range : [ 0, 2 ], default : 1 }; }) },
+		texture_loop_linear_velocity : { type :   'vec', item_size : 2, labels : [ 'x'    , 'y'           ].map(function( label ){ return { label, type : 'float' }; }) },
+		texture_offset               : { type :   'vec', item_size : 2, labels : [ 'x'    , 'y'           ].map(function( label ){ return { label, type : 'float' }; }) },
+		texture_scale                : { type :   'vec', item_size : 2, labels : [ 'x'    , 'y'           ].map(function( label ){ return { label, type : 'float' }; }) },
+		wall_slant                   : { type :   'vec', item_size : 2, labels : [ 'l'    , 'r'           ].map(function( label ){ return { label, type : 'float' }; }) },
+		lat_lon                      : { type :   'vec', item_size : 2, labels : [ 'lat'  , 'lon'         ].map(function( label ){ return { label, type : 'float', min : -180, max : 180 }; }) },
+		alpha                        : { type : 'float', item_size : 1, labels : [ 'a'                    ].map(function( label ){ return { label, type : 'float', min : 0, max : 1 }; }) },
+		alpha_add                    : { type : 'float', item_size : 1, labels : [ 'a'                    ].map(function( label ){ return { label, type : 'float', }; }) },
+		alpha_mult                   : { type : 'float', item_size : 1, labels : [ 'a'                    ].map(function( label ){ return { label, type : 'float', }; }) },
+		bearing                      : { type : 'float', item_size : 1, labels : [ 'deg'                  ].map(function( label ){ return { label, type : 'float', min : 0, max : 360, multiplier : JL.functions.constants.to_radians }; }) },
+		clip_x                       : { type : 'float', item_size : 1, labels : [ 'max'                  ].map(function( label ){ return { label, type : 'float' }; }) },
+		clip_y                       : { type : 'float', item_size : 1, labels : [ 'max'                  ].map(function( label ){ return { label, type : 'float' }; }) },
+		clip_z                       : { type : 'float', item_size : 1, labels : [ 'max'                  ].map(function( label ){ return { label, type : 'float' }; }) },
+		curl_y_freq                  : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'float', default_range : [  0, 50 ], default : 10  }; }) },
+		curl_y_rad                   : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'float', default_range : [ -1,  1 ], default : 0.1 }; }) },
+		diverge_exp                  : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'float', default_range : [  0, 10 ], default : 1   }; }) },
+		diverge_spd                  : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'float', default_range : [ -5,  5 ], default : 1   }; }) },
+		diverge_rad                  : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'float', default_range : [  1,  5 ], default : 1   }; }) },
+		group                        : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'float' }; }) },
+		hue_rotate                   : { type : 'float', item_size : 1, labels : [ 'deg'                  ].map(function( label ){ return { label, type : 'float', min : 0, max : 360, multiplier : JL.functions.constants.to_radians }; }) },
+		hue_rotate_loop_linear_speed : { type : 'float', item_size : 1, labels : [ 'spd'                  ].map(function( label ){ return { label, type : 'float' }; }) },
+		impostor_rot                 : { type : 'float', item_size : 1, labels : [ 'rot'                  ].map(function( label ){ return { label, type : 'float', min : 0, max : 360, multiplier : JL.functions.constants.to_radians }; }) },
+		impostor_spin                : { type : 'float', item_size : 1, labels : [ 'spin'                 ].map(function( label ){ return { label, type : 'float' }; }) },
+		rand_morph_mag               : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'float', default_range : [  0,  1 ], default : 1   }; }) },
+		size                         : { type : 'float', item_size : 1, labels : [ 'size'                 ].map(function( label ){ return { label, type : 'float', default_range : [  0, 10 ], default : 1   }; }) },
+		swirl_y_freq                 : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'float', default_range : [  0, 50 ], default : 10  }; }) },
+		swirl_y_rad                  : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'float', default_range : [ -1,  1 ], default : 0.1 }; }) },
+		swirl_y_speed                : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'float', default_range : [  0,  5 ], default : 0.5 }; }) },
+		texture_size                 : { type : 'float', item_size : 1, labels : [ 'size'                 ].map(function( label ){ return { label, type : 'float', default_range : [  0,  2 ], default : 1   }; }) },
+		time_offset                  : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'float' }; }) },
+		yaw                          : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'float', min : 0, max : 360, multiplier : JL.functions.constants.to_radians }; }) },
+		char_offset                  : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'int' }; }) },
+		str_len                      : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'int' }; }) },
+		window_lit                   : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'int' }; }) },
+		discard                      : { type :   'int', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'int' }; }) },
 	},
 	light : {
 		offset   : { type : 'vec3' },
@@ -13021,6 +13028,17 @@ JL.webgl.shaders.effects = {
 			]
 		}
 	},
+	"_instanced_hue_rotate_loop_linear" : {
+		"included_effects" : [ "_instanced_hue_rotate" ],
+		"append" : {
+			"attr"      : [{ "items" : "hue_rotate_loop_linear_speed" }],
+			"instanced" : [{ "items" : "hue_rotate_loop_linear_speed" }],
+			"out"       : [{ "items" : "hue_rotate_loop_linear_speed" }],
+			"uniforms"  : [
+				{ "shader" : "per_shading", "type" : "float", "var" : "time" }
+			]
+		}
+	},
 	"_instanced_impostor_rot" : {
 		"append" : {
 			"attr"      : [{ "items" : "impostor_rot" }],
@@ -13148,11 +13166,28 @@ JL.webgl.shaders.effects = {
 			]
 		}
 	},
+	"_instanced_texture_loop_linear" : {
+		"append" : {
+			"attr"      : [{ "items" : "texture_loop_linear_velocity" }],
+			"instanced" : [{ "items" : "texture_loop_linear_velocity" }],
+			"out"       : [{ "items" : "texture_loop_linear_velocity" }],
+			"uniforms"  : [
+				{ "shader" : "per_shading", "type" : "float", "var" : "time" }
+			]
+		}
+	},
 	"_instanced_texture_offset" : {
 		"append" : {
 			"attr"      : [{ "items" : "texture_offset" }],
 			"instanced" : [{ "items" : "texture_offset" }],
 			"out"       : [{ "items" : "texture_offset" }]
+		}
+	},
+	"_instanced_texture_scale" : {
+		"append" : {
+			"attr"      : [{ "items" : "texture_scale" }],
+			"instanced" : [{ "items" : "texture_scale" }],
+			"out"       : [{ "items" : "texture_scale" }]
 		}
 	},
 	"_instanced_texture_size" : {
@@ -13496,7 +13531,10 @@ JL.webgl.shaders.effects = {
 	},
 	"_texture_add_3d" : {
 		"append" : {
+			"attr"     : [{ "items" : "v" },{ "items" : "vn" }],
+			"out"      : [{ "items" : "v" },{ "items" : "vn" }],
 			"uniforms" : [
+				{ "shader" : "verts"      , "type" : "mat4"   , "var" : "normal"             },
 				{ "shader" : "per_shading", "type" : "texture", "var" : "texture_add_3d"     },
 				{ "shader" : "per_shading", "type" : "float"  , "var" : "texture_add_3d_mag" },
 				{ "shader" : "per_shading", "type" : "float"  , "var" : "texture_add_3d_scl" }
@@ -13507,6 +13545,14 @@ JL.webgl.shaders.effects = {
 		}
 	},
 	"_texture_flip_vertical" : {},
+	"_texture_loop_linear" : {
+		"append" : {
+			"uniforms" : [
+				{ "shader" : "per_shading", "type" :  "vec2", "var" : "texture_loop_linear_velocity" },
+				{ "shader" : "per_shading", "type" : "float", "var" : "time" }
+			]
+		}
+	},
 	"_texture_map_8" : {
 		"included_effects" : [ "_no_texture_main" ],
 		"append" : {
@@ -13554,26 +13600,26 @@ JL.webgl.shaders.effects = {
 			]
 		}
 	},
-	"_texture_offset"  : {
-		"append" : {
-			"uniforms" : [
-				{ "shader" : "per_shading", "type" : "vec2", "var" : "texture_offset" }
-			]
-		}
-	},
+	"_texture_offset"    : { "append" : { "uniforms" : [{ "shader" : "per_shading", "type" :    "vec2", "var" : "texture_offset" }] } },
 	"_texture_overlay_01": { "append" : { "uniforms" : [{ "shader" : "per_shading", "type" : "texture", "var" : "overlay_01" }] } },
 	"_texture_overlay_02": { "append" : { "uniforms" : [{ "shader" : "per_shading", "type" : "texture", "var" : "overlay_02" }] } },
 	"_texture_overlay_03": { "append" : { "uniforms" : [{ "shader" : "per_shading", "type" : "texture", "var" : "overlay_03" }] } },
 	"_texture_overlay_04": { "append" : { "uniforms" : [{ "shader" : "per_shading", "type" : "texture", "var" : "overlay_04" }] } },
 	"_texture_repeat_3d" : {
 		"append" : {
-			"uniforms"       : [{ "shader" : "per_shading", "type" : "float", "var" : "texture_repeat_3d_scl" }],
+			"attr"           : [{ "items" : "v" },{ "items" : "vn" }],
+			"out"            : [{ "items" : "v" },{ "items" : "vn" }],
+			"uniforms"       : [
+				{ "shader" : "verts"      , "type" : "mat4" , "var" : "normal"                },
+				{ "shader" : "per_shading", "type" : "float", "var" : "texture_repeat_3d_scl" }
+			],
 			"frag_functions" : [{ "var" : "_get_triplanar_texture_sample" }]
 		}
 	},
 	"_texture_repeat"    : { "append" : { "uniforms" : [{ "shader" : "per_shading", "type" : "float", "var" : "texture_repeat"   }] } },
 	"_texture_repeat_x"  : { "append" : { "uniforms" : [{ "shader" : "per_shading", "type" : "float", "var" : "texture_repeat_x" }] } },
 	"_texture_repeat_y"  : { "append" : { "uniforms" : [{ "shader" : "per_shading", "type" : "float", "var" : "texture_repeat_y" }] } },
+	"_texture_scale"     : { "append" : { "uniforms" : [{ "shader" : "per_shading", "type" :  "vec2", "var" : "texture_scale"    }] } },
 	"_texture_size"      : { "append" : { "uniforms" : [{ "shader" : "per_shading", "type" : "float", "var" : "texture_size"     }] } },
 	"_texture_size_wrt_camera_distance_map" : {
 		"append" : {
@@ -14881,9 +14927,17 @@ JL.webgl.shader.prototype.include_shading_calculations = function( shader_source
 
 		if( this.property_exists( 'effects', '_texture_flip_vertical' ) ) shader_source.push( 'vt.y = 1.0 - vt.y;' );
 
+		if( this.uniform_exists( 'frags_vec2', 'texture_scale' ) ){
+			shader_source.push(      'vt *= ' + this.per_shading_type + 's_vec2_texture_scale;' );
+			shader_source.push( 'full_vt *= ' + this.per_shading_type + 's_vec2_texture_scale;' );
+		}
 		if( this.uniform_exists( 'frags_float', 'texture_size' ) ){
 			shader_source.push(      'vt *= ' + this.per_shading_type + 's_float_texture_size;' );
 			shader_source.push( 'full_vt *= ' + this.per_shading_type + 's_float_texture_size;' );
+		}
+		if( this.instanced && this.instanced.includes( 'texture_scale' ) ){
+			shader_source.push(      'vt *= global_texture_scale;' );
+			shader_source.push( 'full_vt *= global_texture_scale;' );
 		}
 		if( this.instanced && this.instanced.includes( 'texture_size' ) ){
 			shader_source.push(      'vt *= global_texture_size;' );
@@ -14898,9 +14952,17 @@ JL.webgl.shader.prototype.include_shading_calculations = function( shader_source
 			shader_source.push(      'vt += ' + this.per_shading_type + 's_vec2_texture_offset;' );
 			shader_source.push( 'full_vt += ' + this.per_shading_type + 's_vec2_texture_offset;' );
 		}
+		if( this.property_exists( 'effects', '_texture_loop_linear' ) ){
+			shader_source.push(      'vt += ( frags_float_time * ' + this.per_shading_type + 's_vec2_texture_loop_linear_velocity );' );
+			shader_source.push( 'full_vt += ( frags_float_time * ' + this.per_shading_type + 's_vec2_texture_loop_linear_velocity );' );
+		}
 		if( this.instanced && this.instanced.includes( 'texture_offset' ) ){
 			shader_source.push(      'vt += global_texture_offset;' );
 			shader_source.push( 'full_vt += global_texture_offset;' );
+		}
+		if( this.property_exists( 'effects', '_instanced_texture_loop_linear' ) ){
+			shader_source.push(      'vt += ( frags_float_time * global_texture_loop_linear_velocity );' );
+			shader_source.push( 'full_vt += ( frags_float_time * global_texture_loop_linear_velocity );' );
 		}
 
 		if(
@@ -15329,7 +15391,11 @@ JL.webgl.shader.prototype.include_shading_calculations = function( shader_source
 				'_noise_voro_2d(' + this.per_shading_type + 's_float_hue_rotate_noise_voro_scale * vt )';
 		}
 	}
-	else if( is_instanced_hue_rotate ) hue_rotate = 'global_hue_rotate';
+	else if( is_instanced_hue_rotate ){
+		hue_rotate = 'global_hue_rotate';
+		if( this.property_exists( 'effects', '_instanced_hue_rotate_loop_linear' ) ) hue_rotate += ' + (' + this.per_shading_type + 's_float_time * global_hue_rotate_loop_linear_speed )';
+	}
+
 	if( hue_rotate ) shader_source.push( 'color_main.rgb = _apply_hue_rotate( color_main.rgb, ' + hue_rotate + ' );' );
 
 	if( this.uniform_exists( this.per_shading_type + 's_float', 'brightness' ) ) shader_source.push( 'color_main.rgb *= ' + this.per_shading_type + 's_float_brightness;' );
@@ -16425,7 +16491,7 @@ JL.webgl.graphics_object._main.edit_ui_on_change_effect = function( p ){
 };
 
 JL.webgl.graphics_object._main.prototype._inputs = [
-	{ key : '_type'     , type : 'dropdown', ui_order : '0',
+	{ key : '_type'     , type : 'dropdown', ui_order : '1',
 		get_options : function(){
 			return Object.keys( JL.webgl.graphics_object ).filter(function( k ){
 				if( k == '_main' ) return false;
@@ -16451,7 +16517,7 @@ JL.webgl.graphics_object._main.prototype._inputs = [
 			}
 		},
 	},
-	{ key : 'label'     , type : 'arr', optional : true, structure : { type : 'str', no_label : true }, ui_order : '1' },
+	{ key : 'label'     , type : 'arr', optional : true, structure : { type : 'str', no_label : true }, ui_order : '2' },
 	{ key : 'properties', type : 'obj', optional : true, structure : [
 		{ key : 'effects', type : 'arr', optional : true,
 			structure : {
@@ -16493,14 +16559,14 @@ JL.webgl.graphics_object._main.prototype._inputs = [
 	{ key : 'primitive', type : 'dropdown', optional : true, no_this_assign : true, options : [ 'TRIANGLES', 'POINTS', 'LINES', 'LINE_STRIP', 'LINE_LOOP', 'TRIANGLE_STRIP', 'TRIANGLE_FAN', ], },
 	{ key : 'transforms', type : 'arr', optional : true,
 		structure : [
-			{ key : 'type'           , type : 'dropdown'             , options : [ 'translate', 'rotate', 'scale', 'subtract', 'intersect', 'union', 'cut_xy', 'cut_xz', 'cut_yz', ], },
-			{ key : 'axis'           , type : 'dropdown'             , options : ['x','y','z'], condition : function( p ){ return [ 'rotate'   ,                     ].includes(p.json_edit.get_value(p.path.slice(0,2).concat(['type']),p.root_value)); }, },
-			{ key : 'val'            , type : 'float'                , optional : 1           , condition : function( p ){ return [ 'rotate'   , 'scale'             ].includes(p.json_edit.get_value(p.path.slice(0,2).concat(['type']),p.root_value)); }, },
-			{ key : 'x'              , type : 'float'                , optional : 1           , condition : function( p ){ return [ 'translate', 'scale'             ].includes(p.json_edit.get_value(p.path.slice(0,2).concat(['type']),p.root_value)); }, },
-			{ key : 'y'              , type : 'float'                , optional : 1           , condition : function( p ){ return [ 'translate', 'scale'             ].includes(p.json_edit.get_value(p.path.slice(0,2).concat(['type']),p.root_value)); }, },
-			{ key : 'z'              , type : 'float'                , optional : 1           , condition : function( p ){ return [ 'translate', 'scale'             ].includes(p.json_edit.get_value(p.path.slice(0,2).concat(['type']),p.root_value)); }, },
-			{ key : 'graphics_object', type : 'webgl.graphics_object',                          condition : function( p ){ return [ 'subtract', 'intersect', 'union' ].includes(p.json_edit.get_value(p.path.slice(0,2).concat(['type']),p.root_value)); }, },
-			{ key : 'points'         , type : 'arr',                                            condition : function( p ){ return [ 'cut_xy', 'cut_xz', 'cut_yz'     ].includes(p.json_edit.get_value(p.path.slice(0,2).concat(['type']),p.root_value)); },
+			{ key : 'type'           , type : 'dropdown'             , options : [ 'translate', 'rotate', 'scale', 'vt_translate', 'vt_rotate', 'vt_scale', 'subtract', 'intersect', 'union', 'cut_xy', 'cut_xz', 'cut_yz', ], },
+			{ key : 'axis'           , type : 'dropdown'             , options : ['x','y','z'], condition : function(p){ return [ 'rotate'   ,                                     ].includes(p.json_edit.get_value(p.path.slice(0,2).concat(['type']),p.root_value)); }, },
+			{ key : 'val'            , type : 'float'                , optional : 1           , condition : function(p){ return [ 'rotate'   , 'scale', 'vt_rotate'   , 'vt_scale' ].includes(p.json_edit.get_value(p.path.slice(0,2).concat(['type']),p.root_value)); }, },
+			{ key : 'x'              , type : 'float'                , optional : 1           , condition : function(p){ return [ 'translate', 'scale', 'vt_translate', 'vt_scale' ].includes(p.json_edit.get_value(p.path.slice(0,2).concat(['type']),p.root_value)); }, },
+			{ key : 'y'              , type : 'float'                , optional : 1           , condition : function(p){ return [ 'translate', 'scale', 'vt_translate', 'vt_scale' ].includes(p.json_edit.get_value(p.path.slice(0,2).concat(['type']),p.root_value)); }, },
+			{ key : 'z'              , type : 'float'                , optional : 1           , condition : function(p){ return [ 'translate', 'scale'                             ].includes(p.json_edit.get_value(p.path.slice(0,2).concat(['type']),p.root_value)); }, },
+			{ key : 'graphics_object', type : 'webgl.graphics_object',                          condition : function(p){ return [ 'subtract', 'intersect', 'union'                 ].includes(p.json_edit.get_value(p.path.slice(0,2).concat(['type']),p.root_value)); }, },
+			{ key : 'points'         , type : 'arr',                                            condition : function(p){ return [ 'cut_xy', 'cut_xz', 'cut_yz'                     ].includes(p.json_edit.get_value(p.path.slice(0,2).concat(['type']),p.root_value)); },
 				graph     : { type : "line_graph", x : 0, y : 1 },
 				structure : { type : 'arr', length : 2, get_default : function(){ return [0,0]; }, no_label : 1, structure : { type : 'float', }, }
 			},
@@ -17109,6 +17175,7 @@ JL.webgl.graphics_object._main.prototype.apply_transforms = function( transforms
 	var g_o = {
 		v  : this.v,
 		vn : this.vn,
+		vt : this.vt,
 	};
 	if( slice ){
 		// 2025-11-21
@@ -17230,6 +17297,40 @@ JL.webgl.graphics_object._main.prototype.apply_transforms = function( transforms
 						group.pivot.y *= -transform.z;
 						group.pivot.z *=  transform.y;
 					}
+				}
+				break;
+			case 'vt_translate':
+				transform.x = ( transform.x != undefined ? transform.x : 0 );
+				transform.y = ( transform.y != undefined ? transform.y : 0 );
+
+				for( var x = 0; x < g_o.vt.length; x += 2 ){
+					var y = x + 1;
+					g_o.vt[ x ] += transform.x;
+					g_o.vt[ y ] += transform.y;
+				}
+				break;
+			case 'vt_rotate':
+				var angle = JL.functions.constants.to_radians * transform.val;
+
+				var cos = Math.cos( angle );
+				var sin = Math.sin( angle );
+
+				for( var x = 0; x < g_o.vt.length; x += 2 ){
+					var y = x + 1;
+					var val_x = g_o.vt[ x ];
+					var val_y = g_o.vt[ y ];
+					g_o.vt[ x ] =  cos * val_x - sin * val_y;
+					g_o.vt[ y ] =  sin * val_x + cos * val_y;
+				}
+				break;
+			case 'vt_scale':
+				transform.x = ( transform.x != undefined ? transform.x : transform.val || 1 );
+				transform.y = ( transform.y != undefined ? transform.y : transform.val || 1 );
+
+				for( var x = 0; x < g_o.vt.length; x += 2 ){
+					var y = x + 1;
+					g_o.vt[ x ] *= transform.x;
+					g_o.vt[ y ] *= transform.y;
 				}
 				break;
 
@@ -21073,7 +21174,7 @@ JL.webgl.graphics_object.obj = JL.functions.inherit_class( function( p ){
 	}
 	else{ load(); }
 }, JL.webgl.graphics_object._main, { _inputs : [
-	{ key : 'keys'    , type : 'arr', optional : true, structure : { type : 'str', no_label : true }, ui_order : '1' },
+	{ key : 'keys'    , type : 'arr', optional : true, structure : { type : 'str', no_label : true }, ui_order : '2' },
 	{ key : 'filename', type : 'str', get_placeholder : function(){
 		var cfg = JL.webgl.ui.item.edit.item_types.graphics_object.curr_graphics_object._config;
 		var path = [];
@@ -21784,7 +21885,7 @@ JL.webgl.graphics_object.square.prototype.load_vertices = function( p ){
 JL.webgl.animation = function( p ){ this.constructor( p ); };
 
 JL.webgl.animation.prototype._inputs = [
-	{ key : 'name', type : 'str', ui_order : '0' },
+	{ key : 'name', type : 'str', ui_order : '1' },
 
 	{ key : 'duration', type : 'int', default : 1, min : 1, },
 
@@ -21799,9 +21900,9 @@ JL.webgl.animation.prototype._inputs = [
 	{ key : 'graphics_object', type : 'dropdown', get_options : function(){ return JL.webgl.edit_animation_graphics_objects.slice(); } },
 
 	{ key : 'pivot', type : 'obj', optional : true, structure : [
-		{ key : 'x', ui_row : '0', type : 'float' },
-		{ key : 'y', ui_row : '0', type : 'float' },
-		{ key : 'z', ui_row : '0', type : 'float' },
+		{ key : 'x', ui_row : '1', type : 'float' },
+		{ key : 'y', ui_row : '1', type : 'float' },
+		{ key : 'z', ui_row : '1', type : 'float' },
 	] },
 
 	// Note: could not figure out an implementation for this that would also work with multiple animations going at the same time - 2024-12-27
@@ -23291,17 +23392,17 @@ JL.webgl.space_object._regular.prototype._inputs = [
 		else                                   return 1;
 	} },
 
-	{ key : 'parent_object', type : 'webgl.space_object', ui_row : '3_par',
+	{ key : 'parent_object', type : 'webgl.space_object', ui_row : '5_par',
 		custom_options : function( p ){
 			return [{ name : 'No parent', }].concat(
 				p.options.filter(function( o ){ return ( o.value !== p.value._id ); })
 			);
 		},
 	},
-	{ key : 'child_type', type : 'dropdown', ui_row : '3_par',
+	{ key : 'child_type', type : 'dropdown', ui_row : '5_par',
 		options : [ '', 'dependent', 'independent', 'lat_lon_rad', 'vertex_group', ],
 	},
-	{ key : 'child_params', type : 'obj', ui_order : '3_par_1', no_this_assign : 1,
+	{ key : 'child_params', type : 'obj', ui_order : '5_par_1', no_this_assign : 1,
 		condition : function( p ){
 			return ( p.json_edit.get_value([ 'child_type' ], p.root_value ) == 'vertex_group' );
 		},
@@ -23323,7 +23424,7 @@ JL.webgl.space_object._regular.prototype._inputs = [
 		],
 	},
 
-	{ key : 'name'        , type : 'str', ui_order : '0' },
+	{ key : 'name'        , type : 'str', ui_order : '1' },
 
 	// TODO : Try to redesign the following types of transformations:
 	// 	-Able to do multiple iterations of each type of transformation.
@@ -23331,22 +23432,22 @@ JL.webgl.space_object._regular.prototype._inputs = [
 	// 	-Standardize naming of these transformations.
 	// 		-Ex: orientation, offset, etc... should have their names change to something more intuitive.
 	// transform:pos
-	{ key : 'x'           , type : 'float', default : 0, no_p_assign : true, ui_row : '0_pos' },
-	{ key : 'y'           , type : 'float', default : 0, no_p_assign : true, ui_row : '0_pos' },
-	{ key : 'z'           , type : 'float', default : 0, no_p_assign : true, ui_row : '0_pos' },
+	{ key : 'x'           , type : 'float', default : 0, no_p_assign : true, ui_row : '2_pos' },
+	{ key : 'y'           , type : 'float', default : 0, no_p_assign : true, ui_row : '2_pos' },
+	{ key : 'z'           , type : 'float', default : 0, no_p_assign : true, ui_row : '2_pos' },
 
 	// transform:sph
-	{ key : 'lat'         , type : 'float', default : 0, no_p_assign : true, ui_row : '1_llr' },
-	{ key : 'lon'         , type : 'float', default : 0, no_p_assign : true, ui_row : '1_llr' },
-	{ key : 'orbit_radius', type : 'float', default : 0, no_p_assign : true, ui_row : '1_llr' },
+	{ key : 'lat'         , type : 'float', default : 0, no_p_assign : true, ui_row : '3_llr' },
+	{ key : 'lon'         , type : 'float', default : 0, no_p_assign : true, ui_row : '3_llr' },
+	{ key : 'orbit_radius', type : 'float', default : 0, no_p_assign : true, ui_row : '3_llr' },
 
 	// transform:rot
-	{ key : 'roll'        , type : 'float', default : 0, no_p_assign : true, ui_row : '2_rpy' },
-	{ key : 'pitch'       , type : 'float', default : 0, no_p_assign : true, ui_row : '2_rpy' },
-	{ key : 'yaw'         , type : 'float', default : 0, no_p_assign : true, ui_row : '2_rpy' },
+	{ key : 'roll'        , type : 'float', default : 0, no_p_assign : true, ui_row : '4_rpy' },
+	{ key : 'pitch'       , type : 'float', default : 0, no_p_assign : true, ui_row : '4_rpy' },
+	{ key : 'yaw'         , type : 'float', default : 0, no_p_assign : true, ui_row : '4_rpy' },
 
-	{ key : 'z_index'     , type : 'float', no_p_assign : true, ui_row : '3_z'  },
-	{ key : 'scale'       , type : 'arr'  , no_p_assign : true, ui_row : '3_z' , structure : { type : 'float' }, length : 3,
+	{ key : 'z_index'     , type : 'float', no_p_assign : true, ui_row : '5_z'  },
+	{ key : 'scale'       , type : 'arr'  , no_p_assign : true, ui_row : '5_z' , structure : { type : 'float' }, length : 3,
 				get_default : function(){ return [ 1, 1, 1 ]; },
 				right_click : { lbl : [
 					{
@@ -23360,8 +23461,8 @@ JL.webgl.space_object._regular.prototype._inputs = [
 				] },
 	},
 
-	{ key : 'draw_xyz'        , type : 'bool' , no_p_assign : true, ui_row : '4_b'  },
-	{ key : 'is_impostor'     , type : 'bool' , no_p_assign : true, ui_row : '4_b'  },
+	{ key : 'draw_xyz'        , type : 'bool' , no_p_assign : true, ui_row : '6_b'  },
+	{ key : 'is_impostor'     , type : 'bool' , no_p_assign : true, ui_row : '6_b'  },
 
 	{ key : 'graphics_objects', type : 'arr', no_this_assign : true, optional : true, structure : { type : 'webgl.graphics_object' } },
 
@@ -25029,7 +25130,7 @@ JL.webgl.space_object._physics.prototype.calculate_position_from_physics = funct
 JL.webgl.space_object._background = JL.functions.inherit_class( function(){}, JL.webgl.space_object._regular, {
 	_inputs_hidden  : [ 'x', 'y', 'z', 'lat', 'lon', 'orbit_radius', 'child_type', 'parent_object', 'draw_xyz', 'key_bindings', 'is_impostor' ].map( key => ({ key }) ),
 	_inputs         : [
-	 	{ key : 'name', type : 'str', ui_order : '0',
+	 	{ key : 'name', type : 'str', ui_order : '1',
 			get_default : function(){
 				var existing_names = JL.webgl.functions.list_all_backgrounds().map( x => x.name );
 				var name, idx = 1;
@@ -26240,14 +26341,14 @@ JL.webgl.space_object._line = JL.functions.inherit_class( function(){}, JL.webgl
 	_inputs_exclude : [ 'scale', 'draw_xyz' ].map( key => ({ key }) ),
 	_inputs : [
 		{ key : 'start', type : 'obj', get_default : function(){ return { x : 0, y : 0, z : 0 }; }, structure : [
-			{ key : 'x', type : 'float', default : 0, ui_row : '0' },
-			{ key : 'y', type : 'float', default : 0, ui_row : '0' },
-			{ key : 'z', type : 'float', default : 0, ui_row : '0' },
+			{ key : 'x', type : 'float', default : 0, ui_row : '1' },
+			{ key : 'y', type : 'float', default : 0, ui_row : '1' },
+			{ key : 'z', type : 'float', default : 0, ui_row : '1' },
 		] },
 		{ key : 'end', type : 'obj', get_default : function(){ return { x : 0, y : 0, z : 0 }; }, structure : [
-			{ key : 'x', type : 'float', default : 0, ui_row : '0' },
-			{ key : 'y', type : 'float', default : 0, ui_row : '0' },
-			{ key : 'z', type : 'float', default : 0, ui_row : '0' },
+			{ key : 'x', type : 'float', default : 0, ui_row : '1' },
+			{ key : 'y', type : 'float', default : 0, ui_row : '1' },
+			{ key : 'z', type : 'float', default : 0, ui_row : '1' },
 		] },
 		{ key : 'line_width', type : 'float', default : 0.0005 },
 		{ key : 'color'     , type : 'str'  , optional : true },
@@ -26725,9 +26826,9 @@ JL.webgl.space_object._terrain = JL.functions.inherit_class( function(){}, JL.we
 	_inputs_exclude : [ 'graphics_objects' ].map( key => ({ key }) ),
 	_inputs : [
 		{ key : 'keys'                  , type : 'arr'      , val_type : 'str', default : [ 'main' ] },
-		{ key : 'x'                     , type : 'float'    , default : 0, ui_row : '0_pos' },
-		{ key : 'y'                     , type : 'float'    , default : 0, ui_row : '0_pos' },
-		{ key : 'z'                     , type : 'float'    , default : 0, ui_row : '0_pos' },
+		{ key : 'x'                     , type : 'float'    , default : 0, ui_row : '2_pos' },
+		{ key : 'y'                     , type : 'float'    , default : 0, ui_row : '2_pos' },
+		{ key : 'z'                     , type : 'float'    , default : 0, ui_row : '2_pos' },
 		{ key : 'auto_update'           , type : 'bool'     , },
 		{ key : 'no_physics'            , type : 'bool'     , },
 		{ key : 'tile_width'            , type : 'float'    , default : 100 },
@@ -26751,16 +26852,16 @@ JL.webgl.space_object._terrain = JL.functions.inherit_class( function(){}, JL.we
 		},
 		{ key : 'random_heights'        , type : 'obj', optional : true,
 			structure : [
-				{ key : 'scale'   , type : 'float' , ui_row : '0_vals', default : 1 },
-				{ key : 'mag'     , type : 'float' , ui_row : '0_vals', default : 1 },
-				{ key : 'octaves' , type : 'int'   , ui_row : '1_vals' },
-				{ key : 'exponent', type : 'float' , ui_row : '1_vals' },
+				{ key : 'scale'   , type : 'float' , ui_row : '1_vals', default : 1 },
+				{ key : 'mag'     , type : 'float' , ui_row : '1_vals', default : 1 },
+				{ key : 'octaves' , type : 'int'   , ui_row : '2_vals' },
+				{ key : 'exponent', type : 'float' , ui_row : '2_vals' },
 			],
 		},
 		{ key : 'density_map_objects'   , type : 'arr'  , structure : [
-			{ key : 'maps'           , type : 'str'   , ui_row : '0_obj', classes : 'filename' },
-			{ key : 'mag'            , type : 'float' , ui_row : '0_obj', default : 1 },
-			{ key : 'seed'           , type : 'int'   , ui_row : '0_obj', default : 0 },
+			{ key : 'maps'           , type : 'str'   , ui_row : '1_obj', classes : 'filename' },
+			{ key : 'mag'            , type : 'float' , ui_row : '1_obj', default : 1 },
+			{ key : 'seed'           , type : 'int'   , ui_row : '1_obj', default : 0 },
 			{ key : 'graphics_object', type : 'obj', 
 				structure : $.extend( true, [], JL.webgl.graphics_object._main.prototype._inputs ).filter(function( s ){
 					return ![ 'label', 'instanced_vals' ].includes( s.key );
@@ -27677,7 +27778,7 @@ JL.webgl.space_object._walker = JL.functions.inherit_class( function(){}, JL.web
 			JL.webgl.space_object._regular.prototype.get_inputs({ fields : [ 'graphics_objects' ] })[ 0 ],
 			{ get_default : function(){ return [ '_default_player' ]; } }
 		),
-		{ key : 'y'                    , type : 'float', no_p_assign : true, ui_row : "0_pos" },
+		{ key : 'y'                    , type : 'float', no_p_assign : true, ui_row : "2_pos" },
 		{ key : 'height'               , type : 'float', default : 1 },
 		{ key : 'radius'               , type : 'float', get_default : function(){ return ( this.height / 4 ); } },
 		{ key : 'walk_mag'             , type : 'float', default :  7000000    },
@@ -28101,8 +28202,8 @@ JL.webgl.space_object._walker.action_animations = {
 JL.webgl.space_object._wall = JL.functions.inherit_class( function(){}, JL.webgl.space_object._physics, {
 	_inputs : [
 		{ key : 'no_physics', type : 'bool', default : true, },
-		{ key : 'size'      , type : 'float', default : 1, ui_order : '0_vals' },
-		{ key : 'graphics_object', type : 'webgl.graphics_object', ui_order : '0_vals_g_o', 
+		{ key : 'size'      , type : 'float', default : 1, ui_order : '1_vals' },
+		{ key : 'graphics_object', type : 'webgl.graphics_object', ui_order : '1_vals_g_o', 
 			get_default : function(){
 				try{ return JL.webgl.functions.get_graphics_object([ '_default_wall' ]).copy({ unique_label : true }); } catch(e){}
 			}, 
@@ -28123,11 +28224,11 @@ JL.webgl.space_object._wall = JL.functions.inherit_class( function(){}, JL.webgl
 			]
 		},
 		{ key : 'features', type : 'arr', structure : [
-			{ key : 'percent'        , type : 'float', ui_row   : '0_vals', default : 0 },
-			{ key : 'y'              , type : 'float', ui_row   : '0_vals', default : 0 },
-			{ key : 'z'              , type : 'float', ui_row   : '0_vals', default : 0 },
-			{ key : 'size'           , type : 'float', ui_row   : '0_vals', default : 1 },
-			{ key : 'graphics_object', type : 'webgl.graphics_object', ui_order : '0_vals_g_o', default : '_default_item', get_options : function(){
+			{ key : 'percent'        , type : 'float', ui_row   : '1_vals', default : 0 },
+			{ key : 'y'              , type : 'float', ui_row   : '1_vals', default : 0 },
+			{ key : 'z'              , type : 'float', ui_row   : '1_vals', default : 0 },
+			{ key : 'size'           , type : 'float', ui_row   : '1_vals', default : 1 },
+			{ key : 'graphics_object', type : 'webgl.graphics_object', ui_order : '1_vals_g_o', default : '_default_item', get_options : function(){
                                 var feature_graphics_objects = [];
                                 try{
                                         feature_graphics_objects = JL.webgl.space_object._building._graphics_objects.features.slice().map(function( m ){
@@ -28556,7 +28657,7 @@ JL.webgl.space_object._building = JL.functions.inherit_class( function(){}, JL.w
 	_inputs : [
 		...JL.webgl.space_object._wall.prototype.get_inputs({ fields : [ 'no_physics', ] }),
 		{ key : 'levels'  , type : 'arr' , entries_collapsed : 1, structure : [
-			{ key : 'y'              , type : 'float', show_while_collapsed : true, ui_order : '0_vals', default : 0 },
+			{ key : 'y'              , type : 'float', show_while_collapsed : true, ui_order : '1_vals', default : 0 },
 			{ key : 'ceiling_up'     , type : 'obj', optional : 1, structure : [{ key : 'graphics_object', no_label : 1, type : 'webgl.graphics_object', get_default : function( p ){ return JL.webgl.space_object._building.create_cap_graphics_object({ type : 'ceiling_up'   }); }, }] },
 			{ key : 'ceiling_down'   , type : 'obj', optional : 1, structure : [{ key : 'graphics_object', no_label : 1, type : 'webgl.graphics_object', get_default : function( p ){ return JL.webgl.space_object._building.create_cap_graphics_object({ type : 'ceiling_down' }); }, }] },
 			{ key : 'floor_up'       , type : 'obj', optional : 1, structure : [{ key : 'graphics_object', no_label : 1, type : 'webgl.graphics_object', get_default : function( p ){ return JL.webgl.space_object._building.create_cap_graphics_object({ type : 'floor_up'     }); }, }] },
@@ -29958,7 +30059,7 @@ JL.webgl.space_object._person.prototype.reshape_update = function(){
 JL.webgl.space_object._path = JL.functions.inherit_class( function(){}, JL.webgl.space_object._physics, {
 	_inputs_exclude : [ 'graphics_objects' ].map( key => ({ key }) ),
 	_inputs         : [
-		{ key : 'path_type', type : 'dropdown', options : [ 'pipe', 'wall', 'road' ], optional : true, ui_order : '0_0', },
+		{ key : 'path_type', type : 'dropdown', options : [ 'pipe', 'wall', 'road' ], optional : true, ui_order : '1_0', },
 
 		...JL.webgl.space_object._wall.prototype.get_inputs({ fields : [ 'no_physics', ] }),
 
@@ -30786,12 +30887,14 @@ JL.webgl.space_object._path.prototype.construct_graphics_object = function( p ){
 	return output;
 };
 
-// JL.webgl.space_object.particle_system._fire = JL.functions.inherit_class( function(){}, JL.webgl.space_object._regular, {
+// TODO : Try getting JL.webgl.space_object._particle_system hierarchy set up.
+// 	-Might need to re-think how to handle space_object keys in environment.json.
+// JL.webgl.space_object._particle_system.fire = JL.functions.inherit_class( function(){}, JL.webgl.space_object._regular, {
 JL.webgl.space_object._fire = JL.functions.inherit_class( function(){}, JL.webgl.space_object._regular, {
 	// _inputs_exclude : [ 'animated', 'graphics_objects' ].map( key => ({ key }) ),
 	_inputs : [
-		{ key : 'num_instances', type : 'int', default : 200 },
-		{ key : 'bounds'       , type : 'obj', optional : 1, structure : [
+		{ key : 'num_instances', type : 'int', ui_order : '1_0', default : 200 },
+		{ key : 'bounds'       , type : 'obj', ui_order : '1_1', structure : [
 			{ key : 'x_min', type : 'float', default : -1, ui_row : 'x', },
 			{ key : 'x_max', type : 'float', default :  1, ui_row : 'x', },
 			{ key : 'y_min', type : 'float', default :  0, ui_row : 'y', },
@@ -30851,15 +30954,36 @@ JL.webgl.space_object._fire.prototype._constructor = function( p ){
 	// 	    -Define random instances for g_o (if not already defined).
 
 	// TODO : test
-	console.log( 'fire constructor : ', p );
+	console.log( 'fire constructor : ', JL.functions.deep_copy( this.bounds ) );
 
-	if( this.graphics_objects.length ){
-		for( var g_o of this.graphics_objects ){
-			// TODO : test
-			console.log( 'fire g_o : ', g_o );
+	if( p.graphics_objects && p.graphics_objects.length ){
+		for( var g_o of p.graphics_objects ){
+			g_o = JL.webgl.functions.get_graphics_object( g_o );
+
+			if( !g_o.attr ) g_o.attr = {};
+
+			if( !g_o.num_instances ) g_o.num_instances = g_o.attr.num_instances = this.num_instances || 200;
+
+			g_o.pos = [];
+			for( var i=0; i < g_o.num_instances; i++ ){
+				g_o.pos.push(
+					JL.functions.random_number( this.bounds.x_min, this.bounds.x_max ),
+					JL.functions.random_number( this.bounds.y_min, this.bounds.y_max ),
+					JL.functions.random_number( this.bounds.z_min, this.bounds.z_max )
+				);
+			}
+
+			g_o.add_effects({ effects : [ '_fire', ], });
+
+			g_o.create_buffers();
 		}
 	}
 	else{
+		this.add_graphics_object(
+			JL.webgl.functions.create_graphics_object(
+				this.get_graphics_object_params()
+			)
+		);
 	}
 };
 
@@ -30867,6 +30991,8 @@ JL.webgl.space_object._fire.prototype.get_graphics_object_params = function( out
 	var p = p || {};
 
 	var self = this;
+
+	var output = output || {};
 
 	if( !output.type ) output.type = JL.webgl.graphics_object.sphere;
 
@@ -30898,45 +31024,6 @@ JL.webgl.space_object._fire.prototype.get_graphics_object_params = function( out
 	};
 
 	return output;
-
-
-	// JL.webgl.particle_system.fire = function( output, args ){
-	// 	var args = args || {};
-
-	// 	if( !output.type ) output.type = JL.webgl.graphics_object.sphere;
-
-	// 	if( !output.params                    ) output.params                    = {};
-	// 	if( !output.params.radius             ) output.params.radius             = 0.05;
-	// 	if( !output.params.v_segs             ) output.params.v_segs             = 4;
-	// 	if( !output.params.h_segs             ) output.params.h_segs             = 4;
-	// 	if( !output.params.properties         ) output.params.properties         = {};
-	// 	if( !output.params.properties.effects ) output.params.properties.effects = [ '_plain' ];
-
-	// 	output.params.properties.effects.push( '_fire' );
-
-	// 	if( output.dynamic ) output.params.properties.preserve_buffers = true;
-
-	// 	var bounds = {
-	// 		x_min : -1, x_max : 1,
-	// 		y_min :  0, y_max : 1,
-	// 		z_min : -1, z_max : 1,
-	// 	};
-	// 	if( args.bounds ) Object.assign( bounds, args.bounds );
-
-	// 	output.params.custom_init = function(){
-	// 		this.num_instances = args.num_instances || 200;
-
-	// 		for( var i=0; i < this.num_instances; i++ ){
-	// 			this.pos.push(
-	// 				JL.functions.random_number( bounds.x_min, bounds.x_max ),
-	// 				JL.functions.random_number( bounds.y_min, bounds.y_max ),
-	// 				JL.functions.random_number( bounds.z_min, bounds.z_max )
-	// 			);
-	// 		}
-	// 	};
-
-	// 	return output;
-	// };
 };
 
 JL.webgl.ui.ar = {};
@@ -32694,10 +32781,10 @@ JL.webgl.ui.item.edit.item_types.space_object.draw_overview = function(){
 		};
 
 		return [
-			{ key : '_id'     , type : 'int', no_label : 1, ui_row : '0', right_click, no_edit : 1, left_click, val_classes : 'jl-webgl-edit-space_object space_object-id  ', style : 'background:rgba(0,0,0,0.4);font-size:9px;padding-top:1px;width:35px;text-align:right;', },
-			{ key : 'type'    , type : 'str', no_label : 1, ui_row : '0', right_click, no_edit : 1, left_click, val_classes : 'jl-webgl-edit-space_object space_object-type', style : 'background:rgba(0,0,0,0.4);font-size:9px;padding-top:1px;width:80px;', },
-			{ key : 'name'    , type : 'str', no_label : 1, ui_row : '0', right_click, no_edit : 1, left_click, val_classes : 'jl-webgl-edit-space_object space_object-name', style : 'width:200px;', },
-			{ key : 'children', type : 'arr', no_label : 1, ui_row : '1', right_click, no_append : 1, no_sort : 1, no_add_new_entry : 1, get_structure, custom_copy, custom_post_copy, on_delete_entries, on_select, },
+			{ key : '_id'     , type : 'int', no_label : 1, ui_row : '1', right_click, no_edit : 1, left_click, val_classes : 'jl-webgl-edit-space_object space_object-id  ', style : 'background:rgba(0,0,0,0.4);font-size:9px;padding-top:1px;width:35px;text-align:right;', },
+			{ key : 'type'    , type : 'str', no_label : 1, ui_row : '1', right_click, no_edit : 1, left_click, val_classes : 'jl-webgl-edit-space_object space_object-type', style : 'background:rgba(0,0,0,0.4);font-size:9px;padding-top:1px;width:80px;', },
+			{ key : 'name'    , type : 'str', no_label : 1, ui_row : '1', right_click, no_edit : 1, left_click, val_classes : 'jl-webgl-edit-space_object space_object-name', style : 'width:200px;', },
+			{ key : 'children', type : 'arr', no_label : 1, ui_row : '2', right_click, no_append : 1, no_sort : 1, no_add_new_entry : 1, get_structure, custom_copy, custom_post_copy, on_delete_entries, on_select, },
 		];
 	};
 

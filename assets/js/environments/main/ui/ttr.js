@@ -182,6 +182,21 @@ JL.webgl.ui.item.ttr.css = `
 		color:#5c9eee;
 		margin-right:5px;
 	}
+
+	#copy-recording{
+		position:fixed;
+		left:0;
+		top:50px;
+		background:#2f572f;
+		color:#fff;
+		border:1px solid rgba(255,255,255,0.5);
+		cursor:pointer;
+		padding:4px 10px;
+	}
+
+	#copy-recording:hover{
+		background:#588c58;
+	}
 `;
 
 JL.webgl.ui.item.ttr.ui_framework = function(){
@@ -197,12 +212,6 @@ JL.webgl.ui.item.ttr.ui_framework = function(){
 		<div class="tap-circle left " ` + on_tap.map( k => k + '="JL.webgl.active_camera.target.tap( 0 );"' ).join(' ') + ` ` + on_release.map( k => k + '="JL.webgl.active_camera.target.release( 0 );"' ).join(' ') + `></div>
 		<div class="tap-circle      " ` + on_tap.map( k => k + '="JL.webgl.active_camera.target.tap( 1 );"' ).join(' ') + ` ` + on_release.map( k => k + '="JL.webgl.active_camera.target.release( 1 );"' ).join(' ') + `></div>
 		<div class="tap-circle right" ` + on_tap.map( k => k + '="JL.webgl.active_camera.target.tap( 2 );"' ).join(' ') + ` ` + on_release.map( k => k + '="JL.webgl.active_camera.target.release( 2 );"' ).join(' ') + `></div>` + 
-
-
-		// `<div class="tap-circle left " onmousedown="JL.webgl.active_camera.target.tap( 0 );" onmouseup="JL.webgl.active_camera.target.release( 0 );"></div>
-		// <div class="tap-circle      " onmousedown="JL.webgl.active_camera.target.tap( 1 );" onmouseup="JL.webgl.active_camera.target.release( 1 );"></div>
-		// <div class="tap-circle right" onmousedown="JL.webgl.active_camera.target.tap( 2 );" onmouseup="JL.webgl.active_camera.target.release( 2 );"></div>` + 
-
 
 		`<div class="top-bar">
 			<div class="score">0</div>
@@ -224,6 +233,9 @@ JL.webgl.ui.item.ttr.ui_framework = function(){
 		</div>
 	</div>
 	<div id="background-ttr" style="background-image:url(` + this.path + `/background.jpg );"></div>` +
+	( !this.is_recording ? '' : 
+		'<div id="copy-recording" onclick="JL.webgl.active_camera.target.copy_recorded_notes_to_clipboard();">Copy Recording</div>'
+	) +
 	( !JL.webgl.hashlinks.get_val( 'edit' ) ? '' : 
 		'<div id="ttr-debug-time" class="ttr-debug"></div>'
 	)

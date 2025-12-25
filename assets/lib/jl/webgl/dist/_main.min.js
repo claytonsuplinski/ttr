@@ -9300,6 +9300,12 @@ JL.webgl.init = function( cfg ){
 		if(    !JL.functions.get_nested_object( m, [ 'events', 'move' ] ) ){
 			JL.functions.set_nested_object( m, [ 'events', 'move' ], [{
 				fn : function( e ){
+					try{
+						var c = JL.webgl.active_camera.target.camera_offset;
+						if( c.no_control ) return;
+					}
+					catch(e){}
+
 					if( this.shift_key.pressed ){
 						if( this.pressed.left ){
 							var atan = Math.atan2( this.curr.y - this.center.y, this.curr.x - this.center.x ) - Math.atan2( this.prev.y - this.center.y, this.prev.x - this.center.x );
@@ -9334,6 +9340,12 @@ JL.webgl.init = function( cfg ){
 		if(    !JL.functions.get_nested_object( m, [ 'events', 'wheel' ] ) ){
 			JL.functions.set_nested_object( m, [ 'events', 'wheel' ], [{
 				fn : function( e ){
+					try{
+						var c = JL.webgl.active_camera.target.camera_offset;
+						if( c.no_control ) return;
+					}
+					catch(e){}
+
 					var e = window.event || e;
 					if( JL.webgl.variables.is_editing ){
 						JL.webgl.active_camera.strafe_view(
@@ -9354,6 +9366,12 @@ JL.webgl.init = function( cfg ){
 		}
 		if(    !JL.functions.get_nested_object( m, [ 'events', 'touch_move_1' ] ) ){
 			JL.functions.set_nested_object( m, [ 'events', 'touch_move_1' ], [{ fn : function( e, touch ){
+				try{
+					var c = JL.webgl.active_camera.target.camera_offset;
+					if( c.no_control ) return;
+				}
+				catch(e){}
+
 				var touch = e.touches[0];
 				JL.webgl.active_camera.mouse_rotate(
 					( this.curr.touch_1.y - this.prev.touch_1.y ) / 4,
@@ -9363,6 +9381,12 @@ JL.webgl.init = function( cfg ){
 		}
 		if(    !JL.functions.get_nested_object( m, [ 'events', 'touch_move_2' ] ) ){
 			JL.functions.set_nested_object( m, [ 'events', 'touch_move_2' ], [{ fn : function( e, touch_1, touch_2 ){
+				try{
+					var c = JL.webgl.active_camera.target.camera_offset;
+					if( c.no_control ) return;
+				}
+				catch(e){}
+
 				var dist_curr = this.distance_xy( this.curr.touch_1, this.curr.touch_2 );
 				var dist_prev = this.distance_xy( this.prev.touch_1, this.prev.touch_2 );
 				JL.webgl.active_camera.zoom_view( ( dist_prev - dist_curr ) / 4 );
@@ -9799,7 +9823,7 @@ JL.webgl.functions.get_space_object = function( p, _p ){
 	var space_objects_lists = [ JL.webgl.all_space_objects.slice(), ];
 	if( env ) space_objects_lists.unshift( env.get_all_space_objects() );
 
-	if( p.class ) p.type = JL.webgl.space_object[ p.class ];
+	if( p.class ) p.type = this.get_space_object_class[ p.class ];
 
 	var id      = p.id || {};
 	var id_keys = Object.keys( id ).filter( k => ![ 'type', 'class' ].includes( k ) );
@@ -9815,6 +9839,44 @@ JL.webgl.functions.get_space_object_from_physics_body_id = function( body_id, en
 	var env = env || JL.webgl.active_environment;
 
 	return this.get_space_object( env.physics_body_id_to_space_object_id[ body_id ] );
+};
+
+JL.webgl.functions.get_space_object_class = function( path ){
+	return JL.functions.get_nested_object( JL.webgl.space_object, ( JL.functions.is_str( path ) ? path.split('/') : path ) );
+};
+
+JL.webgl.functions.get_all_space_object_types = function(){
+	var custom_classes = {};
+	var    lib_classes = {};
+
+	var recursive_helper = function( path ){
+		var curr_obj = JL.functions.get_nested_object( JL.webgl.space_object, path );
+
+		for( var k in curr_obj ){
+			var curr_key = path.concat([ k ]).join('/');
+
+			var child_obj = curr_obj[k];
+
+			var is_space_object = ( child_obj.prototype instanceof JL.webgl.space_object._regular );
+
+			if( JL.functions.is_object( child_obj ) || is_space_object ){
+				if( is_space_object ){
+					if( curr_key.startsWith('_') )    lib_classes[ curr_key ] = true;
+					else                           custom_classes[ curr_key ] = true;
+				}
+
+				recursive_helper( path.concat( k ) );
+			}
+		}
+	};
+	recursive_helper([]);
+
+	delete lib_classes[ '_regular' ];
+
+	return JL.functions.filter_duplicates([ '_regular',
+		...Object.keys( custom_classes ).sort( (a,b) => ( a > b ? 1 : -1 ) ),
+		...Object.keys(    lib_classes ).sort( (a,b) => ( a > b ? 1 : -1 ) ),
+	]);
 };
 
 JL.webgl.functions.get_environment = function( id ){
@@ -10807,11 +10869,13 @@ JL.webgl.load.assets = function( p ){
 
 			if( cfg.space_objects ){
 				for( var space_object_type of Object.keys( cfg.space_objects ) ){
+					var space_object_path = space_object_type.split('/');
+
 					if( space_object_type == '_regular' ) continue;
 
 					if( space_object_type == '_person' ) accumulator.groups.push( '_Person' );
 
-					if( !JL.webgl.space_object[ space_object_type ] ){
+					if( !JL.webgl.functions.get_space_object_class( space_object_path ) ){
 						accumulator.scripts.push({
 							space_object_type,
 							url             : JL.webgl.dir.environments + '/' + keys.join('/') + '/space_object/' + space_object_type + '.js',
@@ -23468,10 +23532,11 @@ JL.webgl.space_object._regular.prototype._inputs = [
 
 	{ key : 'camera_offset', type : 'obj', no_this_assign : true, optional : true,
 		structure : [
-			{ key : 'lat'   , type : 'float', optional : true },
-			{ key : 'lon'   , type : 'float', optional : true },
-			{ key : 'rad'   , type : 'float', optional : true },
-			{ key : 'offset', type : 'arr'  , optional : true, length : 3, structure : { type : 'float', default : 0 } },
+			{ key : 'lat'       , type : 'float', optional : 1 },
+			{ key : 'lon'       , type : 'float', optional : 1 },
+			{ key : 'rad'       , type : 'float', optional : 1 },
+			{ key : 'offset'    , type : 'arr'  , optional : 1, length : 3, structure : { type : 'float', default : 0 } },
+			{ key : 'no_control', type : 'bool' , optional : 1, },
 		],
 	},
 
@@ -23571,13 +23636,12 @@ JL.webgl.space_object._regular.prototype.init = function( p ){
 
 	if( this._on_instantiate ) this._on_instantiate( p );
 
-	if( this._constructor ) this._constructor( p );
-	
-	// TODO : Rename space_object._constructor to space_object._on_init.
-	// 	space_object.__on_init could be used for classes with multiple levels of inheritance (ex: car -> physics -> space_object).
-	// if( this._on_init  ) this._on_init(  p );
-	// if( this.__on_init ) this.__on_init( p );
-	if( this.___on_init ) this.___on_init( p ); // Being used by s_o.floor [2024-10-30], s_o.person [2024-11-15]
+	// 2025-12-23 -- Renamed s_o._constructor to s_o._on_init. (if code breaks, try changing '_constructor' to '_on_init')
+	// if( this._constructor ) this._constructor( p );
+
+	if( this.  _on_init ) this.  _on_init( p ); // 1st level of inheritance -- ex: s_o._physics
+	if( this. __on_init ) this. __on_init( p ); // 2nd level of inheritance -- ex: s_o._car
+	if( this.___on_init ) this.___on_init( p ); // 3rd level of inheritance 
 
 	if( p.graphics_objects ) this.add_graphics_objects( p.graphics_objects.map(function( m ){ return JL.webgl.functions.get_graphics_object( m ); }, this), { no_update_attr : true, } );
 	if( p.ui_info          ) this.ui_info      = p.ui_info;
@@ -24767,7 +24831,7 @@ JL.webgl.space_object._physics = JL.functions.inherit_class( function(){}, JL.we
 	},
 ] } );
 
-JL.webgl.space_object._physics.prototype._constructor = function( p ){
+JL.webgl.space_object._physics.prototype._on_init = function( p ){
 	var p = p || {};
 
 	if( p.collider ) this.no_physics = false;
@@ -25141,7 +25205,7 @@ JL.webgl.space_object._background = JL.functions.inherit_class( function(){}, JL
 	]
 } );
 
-JL.webgl.space_object._background.prototype._constructor = function( p ){
+JL.webgl.space_object._background.prototype._on_init = function( p ){
 	this.orientation = [ 0, 22.75, 0 ];
 	this.type        = "Background";
 	this.draw_xyz    = true;
@@ -25216,7 +25280,7 @@ JL.webgl.space_object._car.prototype.on_physics_init = function( p ){
 	p.collider = collider;
 };
 
-JL.webgl.space_object._car.prototype.___on_init = function( p ){
+JL.webgl.space_object._car.prototype.__on_init = function( p ){
 	var self = this;
 
 	this.scale = [ this.size, this.size, this.size ];
@@ -25472,7 +25536,7 @@ JL.webgl.space_object._dynamic_sky.default_fog_attr = {
 	],
 };
 
-JL.webgl.space_object._dynamic_sky.prototype._constructor = function( p ){
+JL.webgl.space_object._dynamic_sky.prototype._on_init = function( p ){
 	var self = this;
 
 	var p = p || {};
@@ -26091,7 +26155,7 @@ JL.webgl.space_object._floor = JL.functions.inherit_class( function(){}, JL.webg
 	_inputs : []
 } );
 
-JL.webgl.space_object._floor.prototype.___on_init = function( p ){
+JL.webgl.space_object._floor.prototype.__on_init = function( p ){
 	try{
 		if( p.dimensions ) p.collider.shapes[ 0 ].dimensions = p.dimensions;
 	} catch(e){}
@@ -26165,7 +26229,7 @@ JL.webgl.space_object._gateway.prototype.on_physics_init = function( p ){
 	}
 };
 
-JL.webgl.space_object._gateway.prototype.___on_init = function( p ){
+JL.webgl.space_object._gateway.prototype.__on_init = function( p ){
 	switch( this.gateway_type ){
 		case 'tunnel_of_lights':
 			if( !( p.graphics_objects || [] ).length ){
@@ -26237,7 +26301,7 @@ JL.webgl.space_object._graph = JL.functions.inherit_class( function(){}, JL.webg
 	]
 } );
 
-JL.webgl.space_object._graph.prototype._constructor = function( p ){
+JL.webgl.space_object._graph.prototype._on_init = function( p ){
 	var self = this;
 
 	this.draw_xyz = true;
@@ -26355,7 +26419,7 @@ JL.webgl.space_object._line = JL.functions.inherit_class( function(){}, JL.webgl
 	]
 } );
 
-JL.webgl.space_object._line.prototype._constructor = function( p ){
+JL.webgl.space_object._line.prototype._on_init = function( p ){
 	var g_o = JL.webgl.graphics_objects._line;
 	if( this.color ){
 		g_o = g_o.copy();
@@ -26412,7 +26476,7 @@ JL.webgl.space_object._maze = JL.functions.inherit_class( function(){}, JL.webgl
 	],
 } );
 
-JL.webgl.space_object._maze.prototype._constructor = function( p ){
+JL.webgl.space_object._maze.prototype._on_init = function( p ){
 	var self = this;
 
 	this.tile_flags = {
@@ -26881,7 +26945,7 @@ JL.webgl.space_object._terrain = JL.functions.inherit_class( function(){}, JL.we
 	],
 } );
 
-JL.webgl.space_object._terrain.prototype._constructor = function( p ){
+JL.webgl.space_object._terrain.prototype._on_init = function( p ){
 	var self = this;
 
 	var p = p || {};
@@ -27666,7 +27730,7 @@ JL.webgl.space_object._text = JL.functions.inherit_class( function(){}, JL.webgl
 	]
 } );
 
-JL.webgl.space_object._text.prototype._constructor = function( p ){
+JL.webgl.space_object._text.prototype._on_init = function( p ){
 	var self = this;
 
 	var effects = [ '_plain' ];
@@ -28642,7 +28706,7 @@ JL.webgl.space_object._wall.prototype.on_physics_init = function( p ){
 	}
 };
 
-JL.webgl.space_object._wall.prototype.___on_init = function( p ){
+JL.webgl.space_object._wall.prototype.__on_init = function( p ){
 	this.ignore_xyz = true;
 
 	this.features = [];
@@ -29797,7 +29861,7 @@ JL.webgl.space_object._person.default_reshape_config = [
 
 // -- End config -- //
 
-JL.webgl.space_object._person.prototype.___on_init = function( p ){
+JL.webgl.space_object._person.prototype.__on_init = function( p ){
 	var self = this;
 
 	// 2024-11-15
@@ -30887,11 +30951,19 @@ JL.webgl.space_object._path.prototype.construct_graphics_object = function( p ){
 	return output;
 };
 
-// TODO : Try getting JL.webgl.space_object._particle_system hierarchy set up.
-// 	-Might need to re-think how to handle space_object keys in environment.json.
-// JL.webgl.space_object._particle_system.fire = JL.functions.inherit_class( function(){}, JL.webgl.space_object._regular, {
-JL.webgl.space_object._fire = JL.functions.inherit_class( function(){}, JL.webgl.space_object._regular, {
-	// _inputs_exclude : [ 'animated', 'graphics_objects' ].map( key => ({ key }) ),
+JL.webgl.space_object._particle_system = JL.functions.inherit_class( function(){}, JL.webgl.space_object._regular, { _inputs : [
+	// { key : 'no_physics'        , type : 'bool', },
+	// { key : 'could_move'        , type : 'bool', },
+	// { key : 'offset'            , type : 'arr', no_p_assign : true, length : 3, structure : { type : 'float' }, optional : 1 },
+	// { key : 'collider'          , type : 'obj', no_this_assign : true, optional : 1,
+	// 	structure : JL.webgl.physics.collider.prototype._inputs.slice(),
+	// },
+] } );
+
+JL.webgl.space_object._particle_system.prototype._on_init = function( p ){
+};
+
+JL.webgl.space_object._particle_system.fire = JL.functions.inherit_class( function(){}, JL.webgl.space_object._particle_system, {
 	_inputs : [
 		{ key : 'num_instances', type : 'int', ui_order : '1_0', default : 200 },
 		{ key : 'bounds'       , type : 'obj', ui_order : '1_1', structure : [
@@ -30902,59 +30974,11 @@ JL.webgl.space_object._fire = JL.functions.inherit_class( function(){}, JL.webgl
 			{ key : 'z_min', type : 'float', default : -1, ui_row : 'z', },
 			{ key : 'z_max', type : 'float', default :  1, ui_row : 'z', },
 		] },
-		
-		// { key : 'radius'          , type : 'float', default : 10000 },
-		// { key : 'aerosol_percent' , type : 'float', default : 0     },
-		// { key : 'cloud_cover'     , type : 'float', default : 0     , min : 0, max : 1 },
-		// { key : 'day_percent'     , type : 'float', default : 0     },
-		// { key : 'rain_mag'        , type : 'float', default : 0     , min : 0, max : 1 },
-		// { key : 'snow_mag'        , type : 'float', default : 0     , min : 0, max : 1 },
-		// { key : 'wind_dir'        , type : 'float', default : 0     },
-		// { key : 'wind_speed'      , type : 'float', default : 0     },
-		// { key : 'clouds'          , type : 'obj'  , structure : [
-		// 	{ key : 'images', type : 'arr', structure : [
-		// 		{ key : 'texture', type : 'str' },
-		// 		{ key : 'bumpmap', type : 'str' },
-		// 	] },
-		// ] },
-		// { key : 'precip'          , type : 'arr'  , structure : [
-		// 	{ key : 'type', type : 'dropdown', options : [ '', 'rain', 'snow' ], },
-		// 	{ key : 'args', type : 'obj', optional : true, structure : [
-		// 		{ key : 'graphics_objects', type : 'arr'  , structure : { type : 'webgl.graphics_object' } },
-		// 	] },
-		// ] },
-		// { key : 'horizon'         , type : 'obj'  , optional : true, structure : [
-		// 	{ key : 'colors'  , type : 'arr', optional : true, structure : [
-		// 		{ key : 'alpha', type : 'float' },
-		// 		{ key : 'val'  , type : 'arr', length : 3, structure : { type : 'float', min : 0, max : 1 } },
-		// 	] },
-		// ] },
-		// { key : 'fog'             , type : 'obj'  , optional : true, structure : [
-		// 	{ key : 'near', type : 'float', default :    0 },
-		// 	{ key : 'far' , type : 'float', default : 2000 },
-		// 	{ key : 'colors'  , type : 'arr', optional : true, structure : [
-		// 		{ key : 'alpha', type : 'float' },
-		// 		{ key : 'val'  , type : 'arr', length : 3, structure : { type : 'float', min : 0, max : 1 } },
-		// 	] },
-		// ] },
-		// { key : 'other'           , type : 'arr'  , structure : [
-		// 	{ key : 'type'              , type : 'dropdown'  , options : [ '', 'sun' ], },
-		// 	{ key : 'influence_lighting', type : 'bool'     },
-		// 	{ key : 'image'             , type : 'str'      },
-		// ] },
 	]
 } );
 
-JL.webgl.space_object._fire.prototype._constructor = function( p ){
+JL.webgl.space_object._particle_system.fire.prototype.__on_init = function( p ){
 	var self = this;
-
-	// TODO : Iterate over this.graphics_objects. For each g_o:
-	// 	-Apply this.get_graphics_object_params( g_o.config ) to the g_o:
-	// 	    -Add all 'fire' effects to the g_o.
-	// 	    -Define random instances for g_o (if not already defined).
-
-	// TODO : test
-	console.log( 'fire constructor : ', JL.functions.deep_copy( this.bounds ) );
 
 	if( p.graphics_objects && p.graphics_objects.length ){
 		for( var g_o of p.graphics_objects ){
@@ -30980,19 +31004,17 @@ JL.webgl.space_object._fire.prototype._constructor = function( p ){
 	}
 	else{
 		this.add_graphics_object(
-			JL.webgl.functions.create_graphics_object(
-				this.get_graphics_object_params()
-			)
+			JL.webgl.functions.create_graphics_object( this.get_graphics_object_params() )
 		);
 	}
 };
 
-JL.webgl.space_object._fire.prototype.get_graphics_object_params = function( output, p ){
+JL.webgl.space_object._particle_system.fire.prototype.get_graphics_object_params = function( p ){
 	var p = p || {};
 
 	var self = this;
 
-	var output = output || {};
+	var output = p.output || {};
 
 	if( !output.type ) output.type = JL.webgl.graphics_object.sphere;
 
@@ -31870,7 +31892,7 @@ JL.webgl.ui.item.edit.clean_up_graphics_objects = function(){
 
 	var cfg = JL.webgl.active_environment._environment_config;
 	Object.keys( cfg.space_objects ).forEach(function( class_name ){
-		var cls = JL.webgl.space_object[ class_name ];
+		var cls = JL.webgl.functions.get_space_object_class( class_name );
 
 		// 2025-09-25
 		for( var item of cfg.space_objects[ class_name ] ) traverse_item_config( cls, item );
@@ -32370,7 +32392,7 @@ JL.webgl.ui.item.edit.item_types.space_object.add = function( type, item ){
 	var p = p || {};
 
 	try{
-		var test_obj = JL.webgl.active_environment.add_space_object( {}, type );
+		var test_obj = JL.webgl.active_environment.add_space_object( {}, JL.webgl.functions.get_space_object_class( type ) );
 		test_obj.remove();
 	}
 	catch(e){
@@ -32449,10 +32471,7 @@ JL.webgl.ui.item.edit.item_types.space_object.for_each_child_space_object = func
 };
 
 JL.webgl.ui.item.edit.item_types.space_object.get_inputs_from_space_object_type = function( type ){
-	// 2024-10-21
-	// var cls = JL.webgl.space_object._regular;
-	// if( type != 'regular' ) cls = JL.webgl.space_object[ type ];
-	var cls = JL.webgl.space_object[ type ];
+	var cls = JL.webgl.functions.get_space_object_class( type );
 	return $.extend( true, [], cls.prototype._inputs );
 };
 
@@ -32679,17 +32698,6 @@ JL.webgl.ui.item.edit.item_types.space_object.draw_overview = function(){
 	if( this.right_click_menus ) this.right_click_menus.forEach(function( m ){ m.destroy(); });
 	this.right_click_menus = [];
 
-	var s_o_classes = Object.keys( JL.webgl.space_object ).filter(function( k ){
-		return JL.webgl.space_object[ k ].prototype._inputs;
-	}).filter( x => x != '_regular' );
-	var    lib_s_o_classes = [];
-	var custom_s_o_classes = [];
-	for( var c of s_o_classes ) ( c.startsWith('_') ? lib_s_o_classes : custom_s_o_classes ).push( c );
-	var sorted_s_o_classes = [ '_regular',
-		...custom_s_o_classes.sort( (a,b) => ( a > b ? 1 : -1 ) ),
-		   ...lib_s_o_classes.sort( (a,b) => ( a > b ? 1 : -1 ) ),
-	];
-
 	var root_space_objects = JL.webgl.active_environment.get_space_object_hierarchy_from_environment_config( false, ( this.search_filter !== '' ? { all : 1 } : false ) ).sort( (a,b) => ( a.obj._id - b.obj._id ) );
 
 	if( this.search_filter !== '' ){
@@ -32708,7 +32716,7 @@ JL.webgl.ui.item.edit.item_types.space_object.draw_overview = function(){
 		'<div id="space-objects-overview">' +
 			'<div class="panel-header">' +
 				'<select id="add-item-type">' +
-					sorted_s_o_classes.map(function( t ){
+					JL.webgl.functions.get_all_space_object_types().map(function( t ){
 						return '<option>' + t + '</option>';
 					}) +
 				'</select>' +
@@ -32834,7 +32842,7 @@ JL.webgl.ui.item.edit.item_types.space_object.draw = function( self, p ){
 		title         : JL.functions.title_case( this.item_type ),
 		update        : 'JL.webgl.ui.item.edit.item_types.space_object.update_and_redraw();JL.webgl.ui.item.edit.history_add_snapshot();',
 		save          : 'JL.webgl.ui.item.edit.save({ curr_space_object : true });',
-		structure     : ( JL.webgl.space_object[ this.item_type ] || JL.webgl.space_object._regular ).prototype._inputs,
+		structure     : ( JL.webgl.functions.get_space_object_class( this.item_type ) || JL.webgl.space_object._regular ).prototype._inputs,
 		target_object : this._space_objects[ this.item_type ][ this.item_index ],
 		value         : this.current_config,
 	});
@@ -33647,7 +33655,7 @@ JL.webgl.ui.item.mobile_reset_camera.ui_framework = function(){
 
 JL.webgl.device.options.vr.ui.menu = JL.functions.inherit_class( function(){}, JL.webgl.space_object._regular, { _inputs : [] } );
 
-JL.webgl.device.options.vr.ui.menu.prototype._constructor = function(){
+JL.webgl.device.options.vr.ui.menu.prototype._on_init = function(){
 	var self = this;
 
 	this.set_graphics_object( JL.webgl.graphics_objects._in_library.vr.menu.container );
@@ -33928,7 +33936,7 @@ JL.webgl.device.options.vr.ui.loading = JL.functions.inherit_class( function(){}
 
 JL.webgl.device.options.vr.ui.loading.textures = [];
 
-JL.webgl.device.options.vr.ui.loading.prototype._constructor = function(){
+JL.webgl.device.options.vr.ui.loading.prototype._on_init = function(){
 	this.set_graphics_object( JL.webgl.graphics_objects._in_library.vr.loading_background );
 
 	this.ignore_xyz = true;
@@ -34284,9 +34292,11 @@ JL.webgl.environment.prototype.add_space_object_from_environment_config = functi
 	if( !cfg.parent_object ) cfg.parent_object = this._environment_config_root_object;
 
 	var add_fn = 'add_' + JL.functions.lstrip( type, '_' );
-	if     ( this[ add_fn ]                ) item = this[ add_fn ]( cfg );
-	else if( JL.webgl.space_object[ type ] ) item = this.add_space_object( cfg, JL.webgl.space_object[ type ] );
-	else                                     item = this.add_space_object( cfg );
+	var cls = undefined;
+	if     ( this[ add_fn ]                                          ) item = this[ add_fn ]( cfg );
+	else if( cls = JL.webgl.functions.get_space_object_class( type ) ) item = this.add_space_object( cfg, cls );
+	// else if( JL.webgl.space_object[ type ] ) item = this.add_space_object( cfg, JL.webgl.space_object[ type ] );
+	else                                                               item = this.add_space_object( cfg );
 
 	return item;
 };
@@ -34300,8 +34310,11 @@ JL.webgl.environment.prototype.get_space_object_hierarchy_from_environment_confi
 
 	var cfg = cfg || this._environment_config;
 
-	var item_groups = Object.keys( JL.webgl.space_object ).filter(function( k ){
-				return JL.webgl.space_object[ k ].prototype._inputs;
+	// 2025-12-23
+	var item_groups = JL.webgl.functions.get_all_space_object_types().filter(function( k ){
+	// var item_groups = Object.keys( JL.webgl.space_object ).filter(function( k ){
+	//			return JL.webgl.space_object[ k ].prototype._inputs;
+			return JL.webgl.functions.get_space_object_class( k ).prototype._inputs;
 	});
 
 	var all_space_objects_ref = item_groups.filter(function( t ){ return ( cfg.space_objects[ t ] || [] ).length; }).map(function( t ){
@@ -34812,9 +34825,12 @@ JL.webgl.environment.prototype.add_space_object = function( p, type ){
 
 	var type = type || p._type;
 	if( type ){
-		if     ( JL.functions.is_array(  type ) ) space_object_class = JL.functions.get_nested_object( JL.webgl.space_object, type );
-		else if( JL.functions.is_str(    type ) ) space_object_class = JL.webgl.space_object[ type ];
-		else                                      space_object_class = type;
+		// 2025-12-23
+		if( JL.functions.is_array( type ) || JL.functions.is_str( type ) ) space_object_class = JL.webgl.functions.get_space_object_class( type );
+		else                                                               space_object_class = type;
+		// if     ( JL.functions.is_array(  type ) ) space_object_class = JL.functions.get_nested_object( JL.webgl.space_object, type );
+		// else if( JL.functions.is_str(    type ) ) space_object_class = JL.webgl.space_object[ type ];
+		// else                                      space_object_class = type;
 	}
 
 	var obj = new space_object_class();
@@ -35175,44 +35191,6 @@ JL.webgl.framebuffer.prototype.draw = function( p ){
 
 JL.webgl.particle_system = {};
 
-JL.webgl.particle_system.fire = function( output, args ){
-	var args = args || {};
-
-	if( !output.type ) output.type = JL.webgl.graphics_object.sphere;
-
-	if( !output.params                    ) output.params                    = {};
-	if( !output.params.radius             ) output.params.radius             = 0.05;
-	if( !output.params.v_segs             ) output.params.v_segs             = 4;
-	if( !output.params.h_segs             ) output.params.h_segs             = 4;
-	if( !output.params.properties         ) output.params.properties         = {};
-	if( !output.params.properties.effects ) output.params.properties.effects = [ '_plain' ];
-
-	output.params.properties.effects.push( '_fire' );
-
-	if( output.dynamic ) output.params.properties.preserve_buffers = true;
-
-	var bounds = {
-		x_min : -1, x_max : 1,
-		y_min :  0, y_max : 1,
-		z_min : -1, z_max : 1,
-	};
-	if( args.bounds ) Object.assign( bounds, args.bounds );
-
-	output.params.custom_init = function(){
-		this.num_instances = args.num_instances || 200;
-
-		for( var i=0; i < this.num_instances; i++ ){
-			this.pos.push(
-				JL.functions.random_number( bounds.x_min, bounds.x_max ),
-				JL.functions.random_number( bounds.y_min, bounds.y_max ),
-				JL.functions.random_number( bounds.z_min, bounds.z_max )
-			);
-		}
-	};
-
-	return output;
-};
-
 JL.webgl.particle_system.rain = function( output, args ){
 	var args = args || {};
 
@@ -35415,7 +35393,7 @@ JL.webgl.particle_system.blowing_snow = function( output, args ){
 
 JL.webgl.camera.tour_transition = JL.functions.inherit_class( function(){}, JL.webgl.space_object._regular );
 
-JL.webgl.camera.tour_transition.prototype._constructor = function( p ){
+JL.webgl.camera.tour_transition.prototype._on_init = function( p ){
 	this.init_values( p.start, p.end, p.percent );
 };
 

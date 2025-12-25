@@ -33,7 +33,7 @@ JL.webgl.space_object.ttr.prototype.time_str_to_float = function( time_str ){
 	return Number( time_str );
 };
 
-JL.webgl.space_object.ttr.prototype._constructor = function( p ){
+JL.webgl.space_object.ttr.prototype._on_init = function( p ){
 	var self = this;
 
 	this.path = ( this.Song ? 
@@ -65,11 +65,7 @@ JL.webgl.space_object.ttr.prototype._constructor = function( p ){
 
 	this.key_bindings = [ 'ttr' ];
 
-	// TODO : Turn this into a built-in option with s_o.regular
-	if( !JL.webgl.variables.is_editing ) JL.webgl.ui.mouse.disable();
-	else                                 JL.webgl.ui.mouse.enable();
-
-	this.camera_offset = { lat : 30, lon : 0, rad : 3, offset : [ 0, 0, 1.25 ], };
+	this.camera_offset = { lat : 30, lon : 0, rad : 3, offset : [ 0, 0, 1.25 ], no_control : 1, };
 
 	this.note_time_threshold = 0.25;
 
@@ -136,7 +132,7 @@ JL.webgl.space_object.ttr.prototype._constructor = function( p ){
 		params : {
 			named_textures  : { main : this.parts_texture, },
 			properties      : { effects : [ '_plain', '_texture_size', '_instanced_pos', '_instanced_size', '_instanced_color_add', '_instanced_alpha_mult', '_instanced_texture_offset', ], },
-			transforms      : [{ type : 'rotate', axis : 'x', val : -90, }, { type : 'scale', x : 0.2, z : 0.2 }, { type : 'translate', y : 0.02, }],
+			transforms      : [{ type : 'rotate', axis : 'x', val : -90, }, { type : 'scale', x : 0.2, z : 0.2 }, { type : 'translate', y : 0.01, }],
 			dynamic_buffers : [ 'size', 'color_add', 'alpha_mult' ],
 			attr            : {
 				num_instances : note_instances.length,
@@ -144,9 +140,9 @@ JL.webgl.space_object.ttr.prototype._constructor = function( p ){
 			},
 			instanced_vals  : {
 				pos : {
-					x : note_instances.map( n => n.x ),
-					y : note_instances.map( n => 0   ),
-					z : note_instances.map( n => n.z ),
+					x : note_instances.map( n => n.x        ),
+					y : note_instances.map( n => 0          ),
+					z : note_instances.map( n => n.z + 0.05 ),
 				},
 				color_add : {
 					r : note_instances.map( n => 0 ),
@@ -170,27 +166,18 @@ JL.webgl.space_object.ttr.prototype._constructor = function( p ){
 	this.holds_g_o = JL.webgl.functions.create_graphics_object({
 		type   : 'square',
 		params : {
-			// named_textures  : { main : this.parts_texture, },
 			named_textures  : { main : './assets/textures/seamless/sci_fi_patterns/waves_01.jpg', },
 			properties      : { effects : [ '_plain', '_instanced_pos', '_instanced_scl', '_instanced_texture_scale', '_instanced_texture_loop_linear', '_instanced_hue_rotate_loop_linear', ], },
-			// properties      : { effects : [ '_plain', '_texture_repeat_3d', '_instanced_pos', '_instanced_scl', ], },
-			// properties      : { effects : [ '_plain', '_pattern_squares_03', '_instanced_pos', '_instanced_scl', ], },
-			// properties      : { effects : [ '_plain', '_texture_size', '_instanced_pos', '_instanced_scl', '_instanced_texture_offset', ], },
-			transforms      : [{ type : 'scale', x : 0.05, }, { type : 'rotate', axis : 'x', val : 90, }, { type : 'translate', y : 0.01, }],
+			transforms      : [{ type : 'scale', x : 0.05, }, { type : 'rotate', axis : 'x', val : 90, }, { type : 'translate', y : 0.005, }],
 			attr            : {
 				num_instances : hold_instances.length,
-				// frags_float   : { texture_size   : 0.125, },
-				// frags_float   : { rainbow_loop_x : 1, rainbow_loop_speed : 1, },
-				// frags_float   : {
-				// 	texture_repeat_3d_scl : 1,
-				// },
 			},
 			dynamic_buffers : [ 'scl', 'texture_loop_linear_velocity', 'hue_rotate_loop_linear_speed', ],
 			instanced_vals  : {
 				pos : {
 					x : hold_instances.map( n => n.x ),
 					y : hold_instances.map( n => 0   ),
-					z : hold_instances.map( n => ( n.z + ( n.dur / 2 ) ) ),
+					z : hold_instances.map( n => ( n.z + ( n.dur / 2 ) + 0.05 ) ),
 				},
 				scl : {
 					x : hold_instances.map( n => 1 ),
@@ -282,6 +269,34 @@ JL.webgl.space_object.ttr.prototype._constructor = function( p ){
 
 	this.ignore_xyz = true;
 
+	this.is_recording = JL.webgl.hashlinks.get_val( 'record' );
+
+	if( this.is_recording ){
+		this.recorded_notes = [];
+
+		this.curr_recording_note = {};
+
+		this.tap = function( lane ){
+			this.curr_recording_note[ lane ] = { lane, start : JL.functions.round( this.curr_time, 0.1 ), };
+		};
+
+		this.release = function( lane ){
+			if( this.curr_recording_note[ lane ] ){
+				var end_time = JL.functions.round( this.curr_time, 0.1 );
+
+				var dur = end_time - this.curr_recording_note[ lane ].start;
+
+				if( dur >= 0.3 ) this.curr_recording_note[ lane ].end = Number( end_time.toFixed(1) );
+
+				this.curr_recording_note[ lane ].start = Number( this.curr_recording_note[ lane ].start.toFixed(1) );
+
+				this.recorded_notes.push( JL.functions.deep_copy( this.curr_recording_note[ lane ] ) );
+
+				delete this.curr_recording_note[ lane ];
+			}
+		};
+	}
+
 	if( !this.ui_info ) this.ui_info = {};
 	this.ui_info._game  = this;
 	this.ui_info.ttr = {
@@ -301,7 +316,7 @@ JL.webgl.space_object.ttr.prototype.do_success_note_visual = function( note_inde
 
 	var identifying_criteria = { _name : name, };
 
-	var dur      = 0.2;
+	var dur      = 0.1;
 	var end_time = this.curr_time + dur;
 
 	var fn = function(){
@@ -439,6 +454,69 @@ JL.webgl.space_object.ttr.prototype.release = function( lane ){
 
 		delete this.is_holding[ lane ];
 	}
+};
+
+JL.webgl.space_object.ttr.prototype.copy_recorded_notes_to_clipboard = function(){
+	var output = [ 'l,m,r,start,end' ];
+
+	var starts = {};
+
+	this.recorded_notes = this.recorded_notes.sort( (a,b) => ( a.start - b.start ) );
+
+	for( var n of this.recorded_notes ){
+		var start        = n.start;
+		var start_down_1 = n.start - 0.1;
+
+		if( starts[ start_down_1 ] ){
+			if( !starts[ start_down_1 ].find( x => ( x.lane == n.lane ) ) ){
+				n.start = start_down_1;
+				  start = start_down_1;
+			}
+		}
+
+		if( !starts[ start ] ) starts[ start ] = [];
+
+		starts[ start ].push( n );
+	}
+
+	for( var start_time of Object.keys( starts ).sort( (a,b) => ( a - b ) ) ){
+		var time_notes = starts[ start_time ].sort( (a,b) => ( a.end - b.end ) );
+
+		var ends = {};
+
+		for( var n of time_notes ){
+			var end        = n.end;
+			var end_down_1 = n.end - 0.1;
+
+			if( ends[ end_down_1 ] ){
+				if( !ends[ end_down_1 ][ n.lane ] ){
+					n.end = end_down_1;
+					  end = end_down_1;
+				}
+			}
+
+			if( !ends[ end ] ) ends[ end ] = {};
+
+			ends[ end ][ n.lane ] = 1;
+		}
+
+		for( var end_time of Object.keys( ends ).sort( (a,b) => ( a - b ) ) ){
+			var end = ends[ end_time ];
+
+			output.push( [
+				end[ 0 ] || 0,
+				end[ 1 ] || 0,
+				end[ 2 ] || 0,
+				Number( start_time ).toFixed(1),
+				( end_time == 'undefined' ? '' : end_time || '' ),
+			].join(',') );
+		}
+	}
+
+	output = output.join('\n');
+
+	JL.functions.copy_to_clipboard( output ); 
+	console.log(                    output );
 };
 
 JL.webgl.space_object.ttr.prototype.start_game = function( p ){
