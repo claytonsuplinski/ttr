@@ -3,6 +3,8 @@
 -Add ability to shift all notes (from notes.csv) by an input time offset.
 	-This will help get recorded notes in sync with the music.
 
+-Disable Copy/Select All menu in mobile
+
 -- Optional --
 
 -Make successful holds look nicer (maybe increase the brightness/saturation, have a black and white outline to make it stand out from the background?)

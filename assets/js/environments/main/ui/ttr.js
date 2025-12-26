@@ -207,7 +207,7 @@ JL.webgl.ui.item.ttr.ui_framework = function(){
 	var on_tap     = ( is_mobile ? [ 'ontouchstart', ] : [ 'onmousedown', ] );
 	var on_release = ( is_mobile ? [ 'ontouchend', 'ontouchcancel', ] : [ 'onmouseup', ] );
 
-	return `<div id="ttr" class="ui-ttr">
+	return `<div id="ttr" class="ui-ttr no-highlight">
 
 		<div class="tap-circle left " ` + on_tap.map( k => k + '="JL.webgl.active_camera.target.tap( 0 );"' ).join(' ') + ` ` + on_release.map( k => k + '="JL.webgl.active_camera.target.release( 0 );"' ).join(' ') + `></div>
 		<div class="tap-circle      " ` + on_tap.map( k => k + '="JL.webgl.active_camera.target.tap( 1 );"' ).join(' ') + ` ` + on_release.map( k => k + '="JL.webgl.active_camera.target.release( 1 );"' ).join(' ') + `></div>
