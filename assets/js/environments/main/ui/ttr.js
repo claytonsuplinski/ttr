@@ -197,12 +197,51 @@ JL.webgl.ui.item.ttr.css = `
 	#copy-recording:hover{
 		background:#588c58;
 	}
+
+	#shift-notes{
+		position:fixed;
+		left:0;
+		top:85px;
+		background:#111;
+		color:#fff;
+		border:1px solid rgba(255,255,255,0.5);
+		cursor:pointer;
+		padding:4px 10px;
+	}
+
+	#shift-notes span{
+		font-style:italic;
+		opacity:0.6;
+		margin-right:5px;
+	}
+
+	#shift-notes input{
+		background:#444;
+		color:#fff;
+		padding:1px 4px;
+		border:1px solid rgba(255,255,255,0.3);
+		width:75px;
+	}
+
+	#shift-notes .copy-button{
+		background:#35506c;
+		border:1px solid rgba(255,255,255,0.3);
+		margin-top:4px;
+		padding:2px;
+		text-align:center;
+	}
+
+	#shift-notes .copy-button:hover{
+		background:#4e78a4;
+	}
 `;
 
 JL.webgl.ui.item.ttr.ui_framework = function(){
 	var ui_info = this.ui_info.ttr;
 
 	var is_mobile = ( $( window ).width() < 900 );
+
+	var is_editing = JL.webgl.hashlinks.get_val( 'edit' );
 
 	var on_tap     = ( is_mobile ? [ 'ontouchstart', ] : [ 'onmousedown', ] );
 	var on_release = ( is_mobile ? [ 'ontouchend', 'ontouchcancel', ] : [ 'onmouseup', ] );
@@ -236,8 +275,12 @@ JL.webgl.ui.item.ttr.ui_framework = function(){
 	( !this.is_recording ? '' : 
 		'<div id="copy-recording" onclick="JL.webgl.active_camera.target.copy_recorded_notes_to_clipboard();">Copy Recording</div>'
 	) +
-	( !JL.webgl.hashlinks.get_val( 'edit' ) ? '' : 
-		'<div id="ttr-debug-time" class="ttr-debug"></div>'
+	( !is_editing ? '' : 
+		'<div id="ttr-debug-time" class="ttr-debug"></div>' +
+		'<div id="shift-notes">' + 
+			'<span>Shift notes:</span><input type="number" value=0></input>' + 
+			'<div class="copy-button" onclick="JL.webgl.active_camera.target.copy_shifted_notes_to_clipboard();">Copy Notes as CSV</div>' + 
+		'</div>'
 	)
 	;
 };

@@ -519,6 +519,26 @@ JL.webgl.space_object.ttr.prototype.copy_recorded_notes_to_clipboard = function(
 	console.log(                    output );
 };
 
+JL.webgl.space_object.ttr.prototype.copy_shifted_notes_to_clipboard = function(){
+	var output = [ 'l,m,r,start,end' ];
+
+	var shift_val = Number( $( '#shift-notes input' ).val() );
+
+	for( var note of this.notes ){
+		var line = note.lanes.join(',');
+
+		               line += ',' + ( Number( note.start ) + shift_val ).toFixed(1);
+		if( note.end ) line += ',' + ( Number( note.end   ) + shift_val ).toFixed(1);
+
+		output.push( line );
+	}
+
+	output = output.join('\n');
+
+	JL.functions.copy_to_clipboard( output ); 
+	console.log(                    output );
+};
+
 JL.webgl.space_object.ttr.prototype.start_game = function( p ){
 	var self = this;
 
