@@ -167,12 +167,12 @@ JL.webgl.space_object.ttr.prototype._on_init = function( p ){
 		type   : 'square',
 		params : {
 			named_textures  : { main : './assets/textures/seamless/sci_fi_patterns/waves_01.jpg', },
-			properties      : { effects : [ '_plain', '_instanced_pos', '_instanced_scl', '_instanced_texture_scale', '_instanced_texture_loop_linear', '_instanced_hue_rotate_loop_linear', ], },
+			properties      : { effects : [ '_plain', '_instanced_pos', '_instanced_scl', '_instanced_texture_scale', '_instanced_texture_loop_linear', '_instanced_hue_rotate_loop_linear', '_instanced_color_add', '_instanced_gradient_overlay_vt_x', ], },
 			transforms      : [{ type : 'scale', x : 0.05, }, { type : 'rotate', axis : 'x', val : 90, }, { type : 'translate', y : 0.005, }],
 			attr            : {
 				num_instances : hold_instances.length,
 			},
-			dynamic_buffers : [ 'scl', 'texture_loop_linear_velocity', 'hue_rotate_loop_linear_speed', ],
+			dynamic_buffers : [ 'scl', 'texture_loop_linear_velocity', 'hue_rotate_loop_linear_speed', 'color_add', 'gradient_overlay_vt_x_col_1', 'gradient_overlay_vt_x_col_2', 'gradient_overlay_vt_x_col_3', 'gradient_overlay_vt_x_col_4', ],
 			instanced_vals  : {
 				pos : {
 					x : hold_instances.map( n => n.x ),
@@ -192,11 +192,47 @@ JL.webgl.space_object.ttr.prototype._on_init = function( p ){
 					x : hold_instances.map( n => 0    ),
 					y : hold_instances.map( n => 0.02 ),
 				},
+				color_add : {
+					r : hold_instances.map( n => 0 ),
+					g : hold_instances.map( n => 0 ),
+					b : hold_instances.map( n => 0 ),
+				},
 				hue_rotate : {
 					deg : hold_instances.map( n => 0 ),
 				},
 				hue_rotate_loop_linear_speed : {
 					spd : hold_instances.map( n => 0.5 ),
+				},
+
+				gradient_overlay_vt_x_bounds : {
+					1 : hold_instances.map( n => 0   ),
+					2 : hold_instances.map( n => 0.2 ),
+					3 : hold_instances.map( n => 0.8 ),
+					4 : hold_instances.map( n => 1   ),
+				},
+				gradient_overlay_vt_x_col_1 : {
+					r : hold_instances.map( n => 0 ),
+					g : hold_instances.map( n => 0 ),
+					b : hold_instances.map( n => 0 ),
+					a : hold_instances.map( n => 1 ),
+				},
+				gradient_overlay_vt_x_col_2 : {
+					r : hold_instances.map( n => 0 ),
+					g : hold_instances.map( n => 0 ),
+					b : hold_instances.map( n => 0 ),
+					a : hold_instances.map( n => 0 ),
+				},
+				gradient_overlay_vt_x_col_3 : {
+					r : hold_instances.map( n => 0 ),
+					g : hold_instances.map( n => 0 ),
+					b : hold_instances.map( n => 0 ),
+					a : hold_instances.map( n => 0 ),
+				},
+				gradient_overlay_vt_x_col_4 : {
+					r : hold_instances.map( n => 0 ),
+					g : hold_instances.map( n => 0 ),
+					b : hold_instances.map( n => 0 ),
+					a : hold_instances.map( n => 1 ),
 				},
 			},
 		},
@@ -340,10 +376,23 @@ JL.webgl.space_object.ttr.prototype.do_success_note_visual = function( note_inde
 
 JL.webgl.space_object.ttr.prototype.do_success_hold_visual = function( hold_index ){
 	var i_2 = hold_index * 2;
+	var i_3 = hold_index * 3;
+	var i_4 = hold_index * 4;
 
 	this.holds_g_o.hue_rotate_loop_linear_speed[ hold_index ] = 1;
 
 	this.holds_g_o.texture_loop_linear_velocity[ i_2 + 1 ] = -1;
+
+	this.holds_g_o.color_add[ i_3     ] = 0.25;
+	this.holds_g_o.color_add[ i_3 + 1 ] = 0.25;
+	this.holds_g_o.color_add[ i_3 + 2 ] = 0.25;
+
+	for( var i = 1; i <= 4; i++ ){
+		var k = 'gradient_overlay_vt_x_col_' + i;
+		this.holds_g_o[ k ][ i_4     ] = 1;
+		this.holds_g_o[ k ][ i_4 + 1 ] = 1;
+		this.holds_g_o[ k ][ i_4 + 2 ] = 1;
+	}
 };
 
 JL.webgl.space_object.ttr.prototype.do_failed_note_visual = function( note_index ){

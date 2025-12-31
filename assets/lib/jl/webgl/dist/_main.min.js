@@ -1824,6 +1824,14 @@ JL.functions.htmlify_quotes = function( str ){
 	return String( str ).replace( /["]/g, "&quot;" ).replace( /[']/g, "&apos;" );
 };
 
+JL.functions.insert_substring_by_index = function( str, sub_str, index ){
+	return str.slice( 0, index ) + sub_str + str.slice( index );
+};
+
+JL.functions.remove_substring_by_indices = function( str, cut_index_s, cut_index_e ){
+	return str.slice( 0, cut_index_s ) + str.slice( cut_index_e );
+};
+
 JL.functions.remove_punctuation = function( str ){
 	return String( str ).replace( /[.,\/#!$%\^&\*;:{}=\-_`~()\']/g, "" );
 };
@@ -3088,6 +3096,16 @@ JL.functions.is_array = function( v ){
 
 JL.functions.is_function = function( v ){
 	return ( typeof v === 'function' );
+};
+
+JL.functions.is_matrix = function( v ){
+	if( typeof Matrix == 'undefined' ) return;
+
+	if( v instanceof Matrix ) return true;
+
+	if( this.is_object( v ) ){
+		if( Object.keys( Matrix.prototype ).every( k => ( v[k] !== undefined ) ) ) return true;
+	}
 };
 
 JL.functions.is_object = function( v ){
@@ -4410,7 +4428,16 @@ JL.json_edit.prototype.guess_structure = function( key, value ){
 	var recursive_helper = function( _key, _val, structure ){
 		structure.key = _key;
 
-		if( JL.functions.is_object( _val ) ){
+		if( JL.functions.is_matrix( _val ) ){ // Matrix class used in JL.webgl
+			structure.type      = 'mat';
+			structure.structure = [ recursive_helper( 'elements', _val.elements, { no_label : 1, length : _val.elements.length } ) ];
+
+			structure.structure[ 0 ].structure.force_single_line_arr = 1;
+			structure.structure[ 0 ].structure.length                = _val.elements[ 0 ].length;
+			structure.structure[ 0 ].structure.no_label              = 1;
+			structure.structure[ 0 ].structure.structure.no_label    = 1;
+		}
+		else if( JL.functions.is_object( _val ) ){
 			structure.type = 'obj';
 			structure.structure = [];
 			for( var k of Object.keys( _val ) ) structure.structure.push( recursive_helper( k, _val[ k ], {} ) );
@@ -5076,6 +5103,9 @@ JL.json_edit.prototype.get_default_value = function( p ){
 				case 'dropdown':
 					var first_option = ( p.options || ( p.get_options ? p.get_options() : [] ) )[ 0 ];
 					default_val = ( first_option.value !== undefined ? first_option.value : first_option );
+					break;
+				case 'mat':
+					default_val = Matrix.I(4);
 					break;
 				case 'webgl.space_object':
 					var options = this.get_webgl_space_object_options( p );
@@ -6025,11 +6055,60 @@ JL.json_edit.prototype.get_html = function( _params ){
 				);
 
 				break;
+			case 'mat':
+				value = value || {};
+				var mat_structure = $.extend( true, [], structure.structure || [] ).filter( s => s.key == 'elements' ).slice( 0, 1 );
+
+				var expand_button = '';
+				if( structure.is_tabular_layout ){ // If obj is in an array.
+					var is_collapsible = ( structure.collapsed !== undefined );
+					if( structure.optional || is_collapsible ){
+						var obj_collapse_id = 'obj-collapse-' + id;
+						expand_button = '<tr><td id="' + obj_collapse_id + '" class="array-item-button collapse-item" rowspan=' + ( mat_structure.length + 1 ) + '>' + 
+							( is_collapsible ? '&lt;' : '' ) + 
+						'</td></tr>';
+
+						if( structure.optional ){
+							self.right_click_menus.push({ target : '#' + obj_collapse_id, options : [
+								{ label : 'Delete value', onclick : function(){
+									self.set_value({ path, value : undefined, type : structure.type, structure });
+									self.draw();
+								} },
+							], });
+						}
+
+						if( is_collapsible ){
+							self.add_event( 'click', obj_collapse_id, path, function(){
+								self.collapse_section({ id_val, id : collapse_id, val : true, });
+							} );
+						}
+					}
+				}
+
+				contents = '<table>' + expand_button +
+					self.get_html_level({
+						path,
+						structure      : mat_structure,
+						get_html_field : function( field_structure ){
+							var key = field_structure.key;
+							try     { var val = value[ key ]; }
+							catch(e){ var val; }
+							return self.get_html({
+								value            : val,
+								structure        : field_structure,
+								path             : path.slice(),
+								parent_structure : structure, 
+							});
+						},
+					}) +
+				'</table>';
+				break;
 			case 'obj':
 				value = value || {};
 				var obj_structure = $.extend( true, [], structure.structure || [] );
 
 				var structured_keys = obj_structure.map( x => x.key );
+
 				Object.keys( value ).forEach(function( key ){
 					if( !structured_keys.includes( key ) ){
 						var derived_structure = self.guess_structure( key, value[ key ] );
@@ -12128,6 +12207,7 @@ JL.webgl.shaders = {
 	}
 };
 
+// [2025-12-31] it seems like matrices won't work as in/out variables.
 JL.webgl.shaders.config = {
 	attr : {
 		v                            : { type :   'vec', item_size : 3, labels : [ 'x'    , 'y'  , 'z'    ].map(function( label ){ return { label, type : 'float' }; }) },
@@ -12180,6 +12260,33 @@ JL.webgl.shaders.config = {
 		str_len                      : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'int' }; }) },
 		window_lit                   : { type : 'float', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'int' }; }) },
 		discard                      : { type :   'int', item_size : 1, labels : [ 'val'                  ].map(function( label ){ return { label, type : 'int' }; }) },
+
+		gradient_overlay_vt_x_bounds : { type : 'vec', item_size :  4, labels : [1,2,3,4].map(function( label ){ return { label, type : 'float' }; }) },
+		gradient_overlay_vt_y_bounds : { type : 'vec', item_size :  4, labels : [1,2,3,4].map(function( label ){ return { label, type : 'float' }; }) },
+		gradient_overlay_x_bounds    : { type : 'vec', item_size :  4, labels : [1,2,3,4].map(function( label ){ return { label, type : 'float' }; }) },
+		gradient_overlay_y_bounds    : { type : 'vec', item_size :  4, labels : [1,2,3,4].map(function( label ){ return { label, type : 'float' }; }) },
+		gradient_overlay_z_bounds    : { type : 'vec', item_size :  4, labels : [1,2,3,4].map(function( label ){ return { label, type : 'float' }; }) },
+
+		gradient_overlay_vt_x_col_1 : { type : 'vec', item_size :  4, labels : [ 'r', 'g', 'b', 'a' ].map(function( label ){ return { label, type : 'float' }; }) },
+		gradient_overlay_vt_x_col_2 : { type : 'vec', item_size :  4, labels : [ 'r', 'g', 'b', 'a' ].map(function( label ){ return { label, type : 'float' }; }) },
+		gradient_overlay_vt_x_col_3 : { type : 'vec', item_size :  4, labels : [ 'r', 'g', 'b', 'a' ].map(function( label ){ return { label, type : 'float' }; }) },
+		gradient_overlay_vt_x_col_4 : { type : 'vec', item_size :  4, labels : [ 'r', 'g', 'b', 'a' ].map(function( label ){ return { label, type : 'float' }; }) },
+		gradient_overlay_vt_y_col_1 : { type : 'vec', item_size :  4, labels : [ 'r', 'g', 'b', 'a' ].map(function( label ){ return { label, type : 'float' }; }) },
+		gradient_overlay_vt_y_col_2 : { type : 'vec', item_size :  4, labels : [ 'r', 'g', 'b', 'a' ].map(function( label ){ return { label, type : 'float' }; }) },
+		gradient_overlay_vt_y_col_3 : { type : 'vec', item_size :  4, labels : [ 'r', 'g', 'b', 'a' ].map(function( label ){ return { label, type : 'float' }; }) },
+		gradient_overlay_vt_y_col_4 : { type : 'vec', item_size :  4, labels : [ 'r', 'g', 'b', 'a' ].map(function( label ){ return { label, type : 'float' }; }) },
+		gradient_overlay_x_col_1    : { type : 'vec', item_size :  4, labels : [ 'r', 'g', 'b', 'a' ].map(function( label ){ return { label, type : 'float' }; }) },
+		gradient_overlay_x_col_2    : { type : 'vec', item_size :  4, labels : [ 'r', 'g', 'b', 'a' ].map(function( label ){ return { label, type : 'float' }; }) },
+		gradient_overlay_x_col_3    : { type : 'vec', item_size :  4, labels : [ 'r', 'g', 'b', 'a' ].map(function( label ){ return { label, type : 'float' }; }) },
+		gradient_overlay_x_col_4    : { type : 'vec', item_size :  4, labels : [ 'r', 'g', 'b', 'a' ].map(function( label ){ return { label, type : 'float' }; }) },
+		gradient_overlay_y_col_1    : { type : 'vec', item_size :  4, labels : [ 'r', 'g', 'b', 'a' ].map(function( label ){ return { label, type : 'float' }; }) },
+		gradient_overlay_y_col_2    : { type : 'vec', item_size :  4, labels : [ 'r', 'g', 'b', 'a' ].map(function( label ){ return { label, type : 'float' }; }) },
+		gradient_overlay_y_col_3    : { type : 'vec', item_size :  4, labels : [ 'r', 'g', 'b', 'a' ].map(function( label ){ return { label, type : 'float' }; }) },
+		gradient_overlay_y_col_4    : { type : 'vec', item_size :  4, labels : [ 'r', 'g', 'b', 'a' ].map(function( label ){ return { label, type : 'float' }; }) },
+		gradient_overlay_z_col_1    : { type : 'vec', item_size :  4, labels : [ 'r', 'g', 'b', 'a' ].map(function( label ){ return { label, type : 'float' }; }) },
+		gradient_overlay_z_col_2    : { type : 'vec', item_size :  4, labels : [ 'r', 'g', 'b', 'a' ].map(function( label ){ return { label, type : 'float' }; }) },
+		gradient_overlay_z_col_3    : { type : 'vec', item_size :  4, labels : [ 'r', 'g', 'b', 'a' ].map(function( label ){ return { label, type : 'float' }; }) },
+		gradient_overlay_z_col_4    : { type : 'vec', item_size :  4, labels : [ 'r', 'g', 'b', 'a' ].map(function( label ){ return { label, type : 'float' }; }) },
 	},
 	light : {
 		offset   : { type : 'vec3' },
@@ -12942,16 +13049,46 @@ JL.webgl.shaders.effects = {
 			]
 		}
 	},
+	"_gradient_overlay_vt_x" : {
+		"append" : {
+			"uniforms" : [
+				{ "shader" : "per_shading", "type" : "vec4" , "var" : "gradient_overlay_vt_x_bounds" },
+				{ "shader" : "per_shading", "type" : "mat4" , "var" : "gradient_overlay_vt_x_colors" }
+			],
+		}
+	},
+	"_gradient_overlay_vt_y" : {
+		"append" : {
+			"uniforms" : [
+				{ "shader" : "per_shading", "type" : "vec4" , "var" : "gradient_overlay_vt_y_bounds" },
+				{ "shader" : "per_shading", "type" : "mat4" , "var" : "gradient_overlay_vt_y_colors" }
+			],
+		}
+	},
+	"_gradient_overlay_x" : {
+		"append" : {
+			"out"      : [{ "items" : "v" }],
+			"uniforms" : [
+				{ "shader" : "per_shading", "type" : "vec4" , "var" : "gradient_overlay_x_bounds" },
+				{ "shader" : "per_shading", "type" : "mat4" , "var" : "gradient_overlay_x_colors" }
+			],
+		}
+	},
 	"_gradient_overlay_y" : {
 		"append" : {
-			"out" : [
-				{ "items" : "v" }
+			"out"      : [{ "items" : "v" }],
+			"uniforms" : [
+				{ "shader" : "per_shading", "type" : "vec4" , "var" : "gradient_overlay_y_bounds" },
+				{ "shader" : "per_shading", "type" : "mat4" , "var" : "gradient_overlay_y_colors" }
 			],
-			"uniforms"  : [
-				{ "shader" : "per_shading", "type" : "float", "var" : "gradient_overlay_y_min"       },
-				{ "shader" : "per_shading", "type" : "float", "var" : "gradient_overlay_y_max"       },
-				{ "shader" : "per_shading", "type" : "vec4" , "var" : "gradient_overlay_y_min_color" },
-				{ "shader" : "per_shading", "type" : "vec4" , "var" : "gradient_overlay_y_max_color" }
+		}
+	},
+	"_gradient_overlay_z" : {
+		"append" : {
+			"out"      : [{ "items" : "v" }],
+			"uniforms" : [
+				{ "shader" : "per_shading", "type" : "vec4" , "var" : "gradient_overlay_z_bounds" },
+				{ "shader" : "per_shading", "type" : "mat4" , "var" : "gradient_overlay_z_colors" }
 			],
 		}
 	},
@@ -13080,6 +13217,41 @@ JL.webgl.shaders.effects = {
 			"vert_functions"  : [
 				{ "var" : "_rand" }
 			]
+		}
+	},
+	"_instanced_gradient_overlay_vt_x" : {
+		"append" : {
+			"attr"      : [{ "items" : "gradient_overlay_vt_x_bounds" },{ "items" : "gradient_overlay_vt_x_col_1" },{ "items" : "gradient_overlay_vt_x_col_2" },{ "items" : "gradient_overlay_vt_x_col_3" },{ "items" : "gradient_overlay_vt_x_col_4" }],
+			"instanced" : [{ "items" : "gradient_overlay_vt_x_bounds" },{ "items" : "gradient_overlay_vt_x_col_1" },{ "items" : "gradient_overlay_vt_x_col_2" },{ "items" : "gradient_overlay_vt_x_col_3" },{ "items" : "gradient_overlay_vt_x_col_4" }],
+			"out"       : [{ "items" : "gradient_overlay_vt_x_bounds" },{ "items" : "gradient_overlay_vt_x_col_1" },{ "items" : "gradient_overlay_vt_x_col_2" },{ "items" : "gradient_overlay_vt_x_col_3" },{ "items" : "gradient_overlay_vt_x_col_4" }, { "items" : "vt" }],
+		}
+	},
+	"_instanced_gradient_overlay_vt_y" : {
+		"append" : {
+			"attr"      : [{ "items" : "gradient_overlay_vt_y_bounds" },{ "items" : "gradient_overlay_vt_y_col_1" },{ "items" : "gradient_overlay_vt_y_col_2" },{ "items" : "gradient_overlay_vt_y_col_3" },{ "items" : "gradient_overlay_vt_y_col_4" }],
+			"instanced" : [{ "items" : "gradient_overlay_vt_y_bounds" },{ "items" : "gradient_overlay_vt_y_col_1" },{ "items" : "gradient_overlay_vt_y_col_2" },{ "items" : "gradient_overlay_vt_y_col_3" },{ "items" : "gradient_overlay_vt_y_col_4" }],
+			"out"       : [{ "items" : "gradient_overlay_vt_y_bounds" },{ "items" : "gradient_overlay_vt_y_col_1" },{ "items" : "gradient_overlay_vt_y_col_2" },{ "items" : "gradient_overlay_vt_y_col_3" },{ "items" : "gradient_overlay_vt_y_col_4" }, { "items" : "vt" }],
+		}
+	},
+	"_instanced_gradient_overlay_x" : {
+		"append" : {
+			"attr"      : [{ "items" : "gradient_overlay_x_bounds" },{ "items" : "gradient_overlay_x_col_1" },{ "items" : "gradient_overlay_x_col_2" },{ "items" : "gradient_overlay_x_col_3" },{ "items" : "gradient_overlay_x_col_4" }],
+			"instanced" : [{ "items" : "gradient_overlay_x_bounds" },{ "items" : "gradient_overlay_x_col_1" },{ "items" : "gradient_overlay_x_col_2" },{ "items" : "gradient_overlay_x_col_3" },{ "items" : "gradient_overlay_x_col_4" }],
+			"out"       : [{ "items" : "gradient_overlay_x_bounds" },{ "items" : "gradient_overlay_x_col_1" },{ "items" : "gradient_overlay_x_col_2" },{ "items" : "gradient_overlay_x_col_3" },{ "items" : "gradient_overlay_x_col_4" }, { "items" : "local_v" }],
+		}
+	},
+	"_instanced_gradient_overlay_y" : {
+		"append" : {
+			"attr"      : [{ "items" : "gradient_overlay_y_bounds" },{ "items" : "gradient_overlay_y_col_1" },{ "items" : "gradient_overlay_y_col_2" },{ "items" : "gradient_overlay_y_col_3" },{ "items" : "gradient_overlay_y_col_4" }],
+			"instanced" : [{ "items" : "gradient_overlay_y_bounds" },{ "items" : "gradient_overlay_y_col_1" },{ "items" : "gradient_overlay_y_col_2" },{ "items" : "gradient_overlay_y_col_3" },{ "items" : "gradient_overlay_y_col_4" }],
+			"out"       : [{ "items" : "gradient_overlay_y_bounds" },{ "items" : "gradient_overlay_y_col_1" },{ "items" : "gradient_overlay_y_col_2" },{ "items" : "gradient_overlay_y_col_3" },{ "items" : "gradient_overlay_y_col_4" }, { "items" : "local_v" }],
+		}
+	},
+	"_instanced_gradient_overlay_z" : {
+		"append" : {
+			"attr"      : [{ "items" : "gradient_overlay_z_bounds" },{ "items" : "gradient_overlay_z_col_1" },{ "items" : "gradient_overlay_z_col_2" },{ "items" : "gradient_overlay_z_col_3" },{ "items" : "gradient_overlay_z_col_4" }],
+			"instanced" : [{ "items" : "gradient_overlay_z_bounds" },{ "items" : "gradient_overlay_z_col_1" },{ "items" : "gradient_overlay_z_col_2" },{ "items" : "gradient_overlay_z_col_3" },{ "items" : "gradient_overlay_z_col_4" }],
+			"out"       : [{ "items" : "gradient_overlay_z_bounds" },{ "items" : "gradient_overlay_z_col_1" },{ "items" : "gradient_overlay_z_col_2" },{ "items" : "gradient_overlay_z_col_3" },{ "items" : "gradient_overlay_z_col_4" }, { "items" : "local_v" }],
 		}
 	},
 	"_instanced_hue_rotate" : {
@@ -14716,6 +14888,7 @@ JL.webgl.shader.prototype.get_glsl_attr_group = function( group, shader_type ){
 			}
 		}
 
+		// [2025-12-31] it seems like matrices won't work as in/out variables.
 		var size = attr_config.item_size;
 		if( [ 'float', 'int' ].includes( attr_config.type ) ) size = '';
 		else if( attr_config.type == 'mat' ) size = Math.sqrt( size );
@@ -15733,18 +15906,52 @@ JL.webgl.shader.prototype.include_shading_calculations = function( shader_source
 	// # Post-lighting effects #
 	// #########################
 
-	if( this.property_exists( 'effects', '_gradient_overlay_y' ) ){
-		shader_source.push([
-			'float grad_alpha = clamp(' + 
-				'( global_v.y - ' + this.per_shading_type + 's_float_gradient_overlay_y_min )' + 
-				' / ( ' + this.per_shading_type + 's_float_gradient_overlay_y_max - ' + this.per_shading_type + 's_float_gradient_overlay_y_min )' + 
-			', 0.0, 1.0 );',
-			'vec4 grad_color = mix( ' + 
-				this.per_shading_type + 's_vec4_gradient_overlay_y_min_color, ' +
-				this.per_shading_type + 's_vec4_gradient_overlay_y_max_color, grad_alpha );',
-			shading_color + '.rgb = mix( ' + shading_color + '.rgb, grad_color.rgb, grad_color.a );',
-		].join('\n'));
-	}
+	[
+		{ name : '_gradient_overlay_x'   , v :  'v.x', instanced_v_prefix : 'local_' },
+		{ name : '_gradient_overlay_y'   , v :  'v.y', instanced_v_prefix : 'local_' },
+		{ name : '_gradient_overlay_z'   , v :  'v.z', instanced_v_prefix : 'local_' },
+		{ name : '_gradient_overlay_vt_x', v : 'vt.x', },
+		{ name : '_gradient_overlay_vt_y', v : 'vt.y', },
+	].forEach(function( effect ){
+		if( this.property_exists( 'effects', effect.name ) ){
+			var v = 'global_' + effect.v;
+			var b = this.per_shading_type + 's_vec4' + effect.name + '_bounds';
+			var c = this.per_shading_type + 's_mat4' + effect.name + '_colors';
+			shader_source.push([
+				'float bound_min = '+b+'[0];',
+				'float bound_max = '+b+'[1];',
+				'vec4  color_min = vec4( '+c+'[0][0], '+c+'[1][0], '+c+'[2][0], '+c+'[3][0] );',
+				'vec4  color_max = vec4( '+c+'[0][1], '+c+'[1][1], '+c+'[2][1], '+c+'[3][1] );',
+
+				'if( '+b+'[1] < '+b+'[2] && '+b+'[1] <= '+v+' ){ bound_min = '+b+'[1]; bound_max = '+b+'[2]; color_min = vec4( '+c+'[0][1], '+c+'[1][1], '+c+'[2][1], '+c+'[3][1] ); color_max = vec4( '+c+'[0][2], '+c+'[1][2], '+c+'[2][2], '+c+'[3][2] ); }',
+				'if( '+b+'[2] < '+b+'[3] && '+b+'[2] <= '+v+' ){ bound_min = '+b+'[2]; bound_max = '+b+'[3]; color_min = vec4( '+c+'[0][2], '+c+'[1][2], '+c+'[2][2], '+c+'[3][2] ); color_max = vec4( '+c+'[0][3], '+c+'[1][3], '+c+'[2][3], '+c+'[3][3] ); }',
+
+				'float grad_alpha = clamp( ( '+v+' - bound_min ) / ( bound_max - bound_min ), 0.0, 1.0 );',
+				'vec4 grad_color = mix( color_min, color_max, grad_alpha );',
+				shading_color + '.rgb = mix( ' + shading_color + '.rgb, grad_color.rgb, grad_color.a );',
+			].join('\n'));
+		}
+
+		var instanced_effect_name = '_instanced' + effect.name;
+		if( this.property_exists( 'effects', instanced_effect_name ) ){
+			var v = 'global_' + ( effect.instanced_v_prefix || '' ) + effect.v;
+			var b = 'global'  + effect.name + '_bounds';
+			var c = 'global'  + effect.name + '_col';
+			shader_source.push([
+				'float bound_min = '+b+'[0];',
+				'float bound_max = '+b+'[1];',
+				'vec4  color_min = '+c+'_1;',
+				'vec4  color_max = '+c+'_2;',
+
+				'if( '+b+'[1] < '+b+'[2] && '+b+'[1] <= '+v+' ){ bound_min = '+b+'[1]; bound_max = '+b+'[2]; color_min = '+c+'_2; color_max = '+c+'_3; }',
+				'if( '+b+'[2] < '+b+'[3] && '+b+'[2] <= '+v+' ){ bound_min = '+b+'[2]; bound_max = '+b+'[3]; color_min = '+c+'_3; color_max = '+c+'_4; }',
+
+				'float grad_alpha = clamp( ( '+v+' - bound_min ) / ( bound_max - bound_min ), 0.0, 1.0 );',
+				'vec4 grad_color = mix( color_min, color_max, grad_alpha );',
+				shading_color + '.rgb = mix( ' + shading_color + '.rgb, grad_color.rgb, grad_color.a );',
+			].join('\n'));
+		}
+	}, this);
 
 	//------------------------------------------//
 	// Set custom emissive values, if necessary //
@@ -16999,6 +17206,18 @@ JL.webgl.graphics_object._main.prototype.shared_init = function( p ){
 	}
 
 	if( p.attr ) JL.functions.recursive_assign( this, p.attr );
+
+	for( var k in p.attr ){ // For handling matrix attributes from JL.json_edit
+		if( k.endsWith( '_mat2' ) || k.endsWith( '_mat3' ) || k.endsWith( '_mat4' ) ){
+			for( var i in p.attr[ k ] ){
+				if( !( this[k][i] instanceof Matrix ) ){
+					try{
+						this[k][i] = Matrix.create( this[k][i].elements );
+					} catch(e){}
+				}
+			}
+		}
+	}
 
 	this.set_shader();
 
@@ -25553,15 +25772,26 @@ JL.webgl.space_object._dynamic_sky.prototype._on_init = function( p ){
 
 	var horizon_attr;
 	if( p.horizon ){
+		var y_bound_min = this.y + ( -0.02 * this.radius );
+		var y_bound_max = this.y + (  0.07 * this.radius );
+
 		horizon_attr = {
 			attr : {
-				frags_float : {
-					gradient_overlay_y_min : this.y + ( -0.02 * this.radius ),
-					gradient_overlay_y_max : this.y + (  0.07 * this.radius ),
-				},
 				frags_vec4 : {
-					gradient_overlay_y_min_color : [ 0, 0, 0, 1 ],
-					gradient_overlay_y_max_color : [ 0, 0, 0, 0 ],
+					gradient_overlay_y_bounds : [
+						y_bound_min,
+						y_bound_max,
+						y_bound_min,
+						y_bound_min,
+					],
+				},
+				frags_mat4 : {
+					gradient_overlay_y_colors : Matrix.create({ elements : [
+						[ 0, 0, 0, 1 ],
+						[ 0, 0, 0, 0 ],
+						[ 0, 0, 0, 0 ],
+						[ 0, 0, 0, 0 ],
+					] }),
 				},
 			},
 		};
@@ -25672,8 +25902,8 @@ JL.webgl.space_object._dynamic_sky.prototype._on_init = function( p ){
 			self.update_curr_horizon_color();
 
 			for( var i = 0; i < 3; i++ ){
-				this.frags_vec4.gradient_overlay_y_min_color[ i ] = self.curr_horizon_color[ i ]; 
-				this.frags_vec4.gradient_overlay_y_max_color[ i ] = self.curr_horizon_color[ i ];
+				this.frags_mat4.gradient_overlay_y_colors.elements[0][ i ] = self.curr_horizon_color[ i ]; 
+				this.frags_mat4.gradient_overlay_y_colors.elements[1][ i ] = self.curr_horizon_color[ i ];
 			}
 		}
 

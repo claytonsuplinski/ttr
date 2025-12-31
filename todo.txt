@@ -1,7 +1,0 @@
--- TODO --
-
--Make successful holds look nicer (maybe increase the brightness/saturation, have a black and white outline to make it stand out from the background?)
-
--Implement pause button.
-
--Clean up recorded notes.
